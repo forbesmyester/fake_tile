@@ -4,16 +4,16 @@ set -euo pipefail
 IFS=$'\n\t'
 
 function positions() {
-	local OUT
-	OUT=$(xdotool getwindowgeometry "$1" | paste -d " " - - -)
-	RE="Position: ([0-9]+),([0-9]+).*Geometry: ([0-9]+)x([0-9]+)"
-	if [[ "$OUT" =~ $RE ]]; then
-		# shellcheck disable=SC2004
-		echo "$1 L:${BASH_REMATCH[1]} T:${BASH_REMATCH[2]} W:${BASH_REMATCH[3]} H:${BASH_REMATCH[4]} R:$((${BASH_REMATCH[1]} + ${BASH_REMATCH[3]})) B:$((${BASH_REMATCH[2]} + ${BASH_REMATCH[4]})) M:$((${BASH_REMATCH[1]} + ${BASH_REMATCH[3]} / 2)) N:$((${BASH_REMATCH[2]} + ${BASH_REMATCH[4]} / 2))"
-		return
-	else
-		exit 1
-	fi
+    local OUT
+    OUT=$(xdotool getwindowgeometry "$1" | paste -d " " - - -)
+    RE="Position: ([0-9]+),([0-9]+).*Geometry: ([0-9]+)x([0-9]+)"
+    if [[ "$OUT" =~ $RE ]]; then
+        # shellcheck disable=SC2004
+        echo "$1 L:${BASH_REMATCH[1]} T:${BASH_REMATCH[2]} W:${BASH_REMATCH[3]} H:${BASH_REMATCH[4]} R:$((${BASH_REMATCH[1]} + ${BASH_REMATCH[3]})) B:$((${BASH_REMATCH[2]} + ${BASH_REMATCH[4]})) M:$((${BASH_REMATCH[1]} + ${BASH_REMATCH[3]} / 2)) N:$((${BASH_REMATCH[2]} + ${BASH_REMATCH[4]} / 2))"
+        return
+    else
+        exit 1
+    fi
 }
 export -f positions
 
@@ -229,9 +229,11 @@ function get_winid() {
 }
 
 DESKTOP=$(xdotool get_desktop)
-WINS=$(wmctrl -l | grep "[^ ]\+ \+$DESKTOP " | sed 's/ .*//' | parallel --halt now,fail=1 positions {} | sort)
+# WINS=$(wmctrl -l | grep "[^ ]\+ \+$DESKTOP " | sed 's/ .*//' | parallel --halt now,fail=1 positions {} | sort)
+WINS=$(xdotool search --desktop $(xdotool get_desktop) --onlyvisible . 2>/dev/null | parallel --halt now,fail=1 positions {} | sort)
 echo "$WINS"
-ACTIVE_WIN=$(printf '0x%08x\n' "$(xdotool getactivewindow)")
+# ACTIVE_WIN=$(printf '0x%08x\n' "$(xdotool getactivewindow)")
+ACTIVE_WIN=$(xdotool getactivewindow)
 DESKTOP_WIDTH=9999
 DESKTOP_HEIGHT=9999
 

@@ -14,7 +14,7 @@ I believe (right now, at the time of writing) that it is pressing using the WIN/
 
 ## The Plan
 
-Given that I don't tend to have complicated window layouts. When the user requests to switch to a window in a given direction, it should be possible to to use `xdotool` or `wmctrl` to:
+Given that I don't tend to have complicated window layouts. When the user requests to switch to a window in a given direction, it should be possible to to use `xdotool` to:
 
  * Find the current window
  * Look at what windows are in the desired direction
@@ -27,12 +27,11 @@ Please see [`fake_tile`](fake_tile).
  * `fake_tile` takes one argument which should be `left`, `right`, `up` or `down`.
  * If you have a terminal window you can type `fake_tile left` and it will switch to the / a window on the left.
  * If you are not in a terminal you probably want to bind it as a custom shortcut in your window manager / desktop environment of choice.
- * Uses [GNU Parallel](https://www.gnu.org/software/parallel/) to run `xdotool` and `wmctrl` which means it probably only works in X11/Xorg and not Wayland. Pull Requests are welcome.
+ * Uses [GNU Parallel](https://www.gnu.org/software/parallel/) to run `xdotool` which means it probably only works in X11/Xorg and not Wayland. Pull Requests are welcome.
 
 ## Installation
 
  * Install `xdotool`
- * Install `wmctrl`
  * Install [GNU Parallel](https://www.gnu.org/software/parallel/)
  * Copy this script somewhere...
  * Bind the desired keys to execute `fake_tile [DIRECTION]` in your favorite window manager (if in GNOME maybe [this will help](https://askubuntu.com/questions/26056/where-are-gnome-keyboard-shortcuts-stored/217310#217310)).
