@@ -1,0 +1,316 @@
+#!/bin/bash
+
+set -euo pipefail
+IFS=$'\n\t'
+
+function positions() {
+	local OUT
+	OUT=$(xdotool getwindowgeometry "$1" | paste -d " " - - -)
+	RE="Position: ([0-9]+),([0-9]+).*Geometry: ([0-9]+)x([0-9]+)"
+	if [[ "$OUT" =~ $RE ]]; then
+		# shellcheck disable=SC2004
+		echo "$1 L:${BASH_REMATCH[1]} T:${BASH_REMATCH[2]} W:${BASH_REMATCH[3]} H:${BASH_REMATCH[4]} R:$((${BASH_REMATCH[1]} + ${BASH_REMATCH[3]})) B:$((${BASH_REMATCH[2]} + ${BASH_REMATCH[4]})) M:$((${BASH_REMATCH[1]} + ${BASH_REMATCH[3]} / 2)) N:$((${BASH_REMATCH[2]} + ${BASH_REMATCH[4]} / 2))"
+		return
+	else
+		exit 1
+	fi
+}
+export -f positions
+
+function left_area() {
+	local RE="L:([0-9]+).*T:([0-9]+).*B:([0-9]+)"
+	if [[ "$1" =~ $RE ]]; then
+		echo "L:0 T:${BASH_REMATCH[2]} R:${BASH_REMATCH[1]} B:${BASH_REMATCH[3]}"
+		return
+	fi
+	exit 1
+}
+
+function right_area() {
+	local RE="T:([0-9]+).*R:([0-9]+).*B:([0-9]+)"
+	if [[ "$1" =~ $RE ]]; then
+		echo "L:${BASH_REMATCH[2]} T:${BASH_REMATCH[1]} R:$2 B:${BASH_REMATCH[3]}"
+		return
+	fi
+	exit 1
+}
+
+function top_area() {
+	local RE="L:([0-9]+).*T:([0-9]+).*R:([0-9]+)"
+	if [[ "$1" =~ $RE ]]; then
+		echo "L:${BASH_REMATCH[1]} T:0 R:${BASH_REMATCH[3]} B:${BASH_REMATCH[2]}"
+		return
+	fi
+	exit 1
+}
+
+function bottom_area() {
+	local RE="L:([0-9]+).*R:([0-9]+).*B:([0-9]+)"
+	if [[ "$1" =~ $RE ]]; then
+		echo "L:${BASH_REMATCH[1]} T:${BASH_REMATCH[3]} R:${BASH_REMATCH[2]} B:$3"
+		return
+	fi
+	exit 1
+}
+
+show_help() {
+	echo "NAME:"
+	echo "  $0 - Switches windows based on position"
+	echo ""
+	echo "USAGE:"
+	echo "  $0 DIRECTION"
+	echo ""
+	echo "ARGUMENTS:"
+	echo "  DIRECTION     This must be one of up, down, left or right"
+	echo ""
+}
+
+function within_impl() {
+	if [ "$1" -gt "$3" ] && [ "$1" -lt "$5" ] && [ "$2" -gt "$4" ] && [ "$2" -lt "$6" ]; then
+		return 0
+	fi
+	return 1
+}
+
+function within() {
+	local WIN_RE="L:([0-9]+).*T:([0-9]+).*W:([0-9]+).*H:([0-9]+).*R:([0-9]+).*B:([0-9]+).*M:([0-9]+).*N:([0-9]+)"
+
+	local AREA_L="$1"
+	local AREA_R="$3"
+	local AREA_T="$2"
+	local AREA_B="$4"
+	local DIRECTION="$6"
+
+	if [[ "$5" =~ $WIN_RE ]]; then
+		local WIN_L="${BASH_REMATCH[1]}"
+		local WIN_T="${BASH_REMATCH[2]}"
+		# WIN_W="${BASH_REMATCH[3]}"
+		# WIN_H="${BASH_REMATCH[4]}"
+		local WIN_R="${BASH_REMATCH[5]}"
+		local WIN_B="${BASH_REMATCH[6]}"
+		local WIN_M="${BASH_REMATCH[7]}"
+		local WIN_N="${BASH_REMATCH[8]}"
+
+		echo "== ($1 $3 $2 $4)"
+		echo "WIN_L = $WIN_L"
+		echo "WIN_T = $WIN_T"
+		echo "WIN_R = $WIN_R"
+		echo "WIN_B = $WIN_B"
+		echo "WIN_M = $WIN_M"
+		echo "WIN_N = $WIN_N"
+
+        local L="$WIN_L"
+        local R="$WIN_R"
+
+
+        if [ "$L" -lt "$AREA_L" ]; then
+            L="$AREA_L"
+        fi
+
+        if [ "$R" -gt "$AREA_R" ]; then
+            R="$AREA_R"
+        fi
+
+
+        local AREA=1
+        local WIN=1
+        local WITHIN_AREA=0
+        echo "> $DIRECTION"
+        if [ "$DIRECTION" = "left" ] || [ "$DIRECTION" = "right" ]; then
+            local T="$WIN_T"
+            local B="$WIN_B"
+            AREA=$(( AREA_B - AREA_T ));
+            WIN=$(( WIN_B - WIN_T ));
+            if [ "$T" -lt "$AREA_T" ]; then
+                T="$AREA_T"
+            fi
+            if [ "$B" -gt "$AREA_B" ]; then
+                B="$AREA_B"
+            fi
+            WITHIN_AREA=$(( ( B - T ) ));
+        fi
+        if [ "$DIRECTION" = "up" ] || [ "$DIRECTION" = "down" ]; then
+            local L="$WIN_L"
+            local R="$WIN_R"
+            AREA=$(( AREA_R - AREA_L ));
+            WIN=$(( WIN_R - WIN_L ));
+            if [ "$L" -lt "$AREA_L" ]; then
+                L="$AREA_L"
+            fi
+            if [ "$R" -gt "$AREA_R" ]; then
+                R="$AREA_R"
+            fi
+            WITHIN_AREA=$(( ( R - L ) ));
+        fi
+
+        local AREA_THREE_QUARTERS=$(( (AREA / 4) * 3 ))
+        local WIN_THREE_QUARTERS=$(( (WIN / 4) * 3 ))
+        if [ "$WITHIN_AREA" -lt "$AREA_THREE_QUARTERS" ]; then
+            if [ "$WITHIN_AREA" -lt "$WIN_THREE_QUARTERS" ]; then
+                echo "NOT ENOUGH WINDOW"
+                return 1
+            fi
+        fi
+
+        if [ "$DIRECTION" = "left" ] && [ "$WIN_R" -gt "$AREA_R" ]; then
+            echo "WINDOW OVER CURRENT (L $WIN_R $AREA_R)"
+            return 1
+        fi
+
+        if [ "$DIRECTION" = "up" ] && [ "$WIN_B" -gt "$AREA_B" ]; then
+            echo "WINDOW OVER CURRENT (T)"
+            return 1
+        fi
+
+        if [ "$DIRECTION" = "right" ] && [ "$WIN_L" -lt "$AREA_L" ]; then
+            echo "WINDOW OVER CURRENT (R)"
+            return 1
+        fi
+
+        if [ "$DIRECTION" = "down" ] && [ "$WIN_T" -lt "$AREA_T" ]; then
+            echo "WINDOW OVER CURRENT (B)"
+            return 1
+        fi
+
+        echo "WIN: $WIN / AREA: $AREA / WITHIN_AREA: $WITHIN_AREA"
+
+		# https://developer.mozilla.org/en-US/docs/Games/Techniques/2D_collision_detection#axis-aligned_bounding_box
+		if [ "$AREA_L" -lt "$WIN_R" ] &&
+			[ "$AREA_R" -gt "$WIN_L" ] &&
+			[ "$AREA_T" -lt "$WIN_B" ] &&
+			[ "$AREA_B" -gt "$WIN_T" ]; then
+			return 0
+		fi
+
+		# if within_impl "$WIN_M" "$WIN_N" "$1" "$2" "$3" "$4"; then
+		#     return 0
+		# fi
+		# if within_impl "$WIN_L" "$WIN_T" "$1" "$2" "$3" "$4"; then
+		#     return 0
+		# fi
+		# if within_impl "$WIN_L" "$WIN_B" "$1" "$2" "$3" "$4"; then
+		#     return 0
+		# fi
+		# if within_impl "$WIN_R" "$WIN_T" "$1" "$2" "$3" "$4"; then
+		#     return 0
+		# fi
+		# if within_impl "$WIN_R" "$WIN_B" "$1" "$2" "$3" "$4"; then
+		#     return 0
+		# fi
+	fi
+	return 1
+}
+
+function get_horiz() {
+	RE="M:([0-9]+)"
+	if [[ "$1" =~ $RE ]]; then
+		echo "${BASH_REMATCH[1]}"
+		exit 0
+	fi
+	exit 1
+}
+
+function get_vert() {
+	RE="N:([0-9]+)"
+	if [[ "$1" =~ $RE ]]; then
+		echo "${BASH_REMATCH[1]}"
+		exit 0
+	fi
+	exit 1
+}
+
+function get_winid() {
+	RE="^([^ ]+)"
+	if [[ "$1" =~ $RE ]]; then
+		echo "${BASH_REMATCH[1]}"
+		exit 0
+	fi
+	exit 1
+}
+
+DESKTOP=$(xdotool get_desktop)
+WINS=$(wmctrl -l | grep "[^ ]\+ \+$DESKTOP " | sed 's/ .*//' | parallel --halt now,fail=1 positions {} | sort)
+echo "$WINS"
+ACTIVE_WIN=$(printf '0x%08x\n' "$(xdotool getactivewindow)")
+DESKTOP_WIDTH=9999
+DESKTOP_HEIGHT=9999
+
+# DESKTOP_GEOM_RE="^([0-9]+) ([0-9]+)"
+# if [[ "$(xdotool getdisplaygeometry)" =~ $DESKTOP_GEOM_RE ]]; then
+#     DESKTOP_WIDTH="${BASH_REMATCH[1]}"
+#     DESKTOP_HEIGHT="${BASH_REMATCH[2]}"
+# else
+#     echo "Could not find desktop geometry"
+#     exit 1
+# fi
+
+# echo "DESKTOP: $DESKTOP @ ${DESKTOP_WIDTH}x${DESKTOP_HEIGHT}"
+# echo "WINS: "
+# echo ""
+# echo "$WINS"
+# echo "ACTIVE_WIN: $ACTIVE_WIN"
+# echo "LEFT: $(left_area "$(echo "$WINS" | grep "$ACTIVE_WIN")" "$DESKTOP_WIDTH" "$DESKTOP_HEIGHT")"
+# echo "RIGHT: $(right_area "$(echo "$WINS" | grep "$ACTIVE_WIN")" "$DESKTOP_WIDTH" "$DESKTOP_HEIGHT")"
+# echo "TOP: $(top_area "$(echo "$WINS" | grep "$ACTIVE_WIN")" "$DESKTOP_WIDTH" "$DESKTOP_HEIGHT")"
+# echo "BOTTOM: $(bottom_area "$(echo "$WINS" | grep "$ACTIVE_WIN")" "$DESKTOP_WIDTH" "$DESKTOP_HEIGHT")"
+
+if [ $# -gt 0 ] && [ "$1" == "help" ]; then
+	show_help
+	exit 0
+fi
+
+AREA="L:0 T:0 R:0 B:0"
+if [ "$1" == "up" ]; then
+	AREA="$(top_area "$(echo "$WINS" | grep "$ACTIVE_WIN")" "$DESKTOP_WIDTH" "$DESKTOP_HEIGHT")"
+fi
+
+if [ "$1" == "down" ]; then
+	AREA="$(bottom_area "$(echo "$WINS" | grep "$ACTIVE_WIN")" "$DESKTOP_WIDTH" "$DESKTOP_HEIGHT")"
+fi
+
+if [ "$1" == "left" ]; then
+	AREA="$(left_area "$(echo "$WINS" | grep "$ACTIVE_WIN")" "$DESKTOP_WIDTH" "$DESKTOP_HEIGHT")"
+fi
+
+if [ "$1" == "right" ]; then
+	AREA="$(right_area "$(echo "$WINS" | grep "$ACTIVE_WIN")" "$DESKTOP_WIDTH" "$DESKTOP_HEIGHT")"
+fi
+
+RE="L:([0-9]+).*T:([0-9]+).*R:([0-9]+).*B:([0-9]+)"
+echo "AREA: $AREA"
+if [[ "$AREA" =~ $RE ]]; then
+	L="${BASH_REMATCH[1]}"
+	T="${BASH_REMATCH[2]}"
+	R="${BASH_REMATCH[3]}"
+	B="${BASH_REMATCH[4]}"
+else
+	exit 1
+fi
+
+
+for W in $WINS; do
+	set +e
+	if [ "$(get_winid "$W")" == "$ACTIVE_WIN" ]; then
+		echo "ACTIVE WINDOW: $ACTIVE_WIN"
+		continue
+	fi
+	if within "$L" "$T" "$R" "$B" "$W" "$1"; then
+		set -e
+		echo "IN $W"
+		if [ "$1" == "right" ]; then
+			R="$(get_horiz "$W")"
+		fi
+		if [ "$1" == "left" ]; then
+			L="$(get_horiz "$W")"
+		fi
+		if [ "$1" == "up" ]; then
+			T="$(get_vert "$W")"
+		fi
+		if [ "$1" == "down" ]; then
+			B="$(get_vert "$W")"
+		fi
+		echo "FOCUS: $(get_winid "$W")"
+		xdotool windowactivate "$(get_winid "$W")"
+	fi
+	set -e
+done
