@@ -143,60 +143,46 @@ function within() {
             WITHIN_AREA=$(( ( R - L ) ));
         fi
 
-        local AREA_THREE_QUARTERS=$(( (AREA / 4) * 3 ))
-        local WIN_THREE_QUARTERS=$(( (WIN / 4) * 3 ))
-        if [ "$WITHIN_AREA" -lt "$AREA_THREE_QUARTERS" ]; then
-            if [ "$WITHIN_AREA" -lt "$WIN_THREE_QUARTERS" ]; then
-                echo "NOT ENOUGH WINDOW"
-                return 1
-            fi
-        fi
-
-        if [ "$DIRECTION" = "left" ] && [ "$WIN_R" -gt "$AREA_R" ]; then
-            echo "WINDOW OVER CURRENT (L $WIN_R $AREA_R)"
-            return 1
-        fi
-
-        if [ "$DIRECTION" = "up" ] && [ "$WIN_B" -gt "$AREA_B" ]; then
-            echo "WINDOW OVER CURRENT (T)"
-            return 1
-        fi
-
-        if [ "$DIRECTION" = "right" ] && [ "$WIN_L" -lt "$AREA_L" ]; then
-            echo "WINDOW OVER CURRENT (R)"
-            return 1
-        fi
-
-        if [ "$DIRECTION" = "down" ] && [ "$WIN_T" -lt "$AREA_T" ]; then
-            echo "WINDOW OVER CURRENT (B)"
-            return 1
-        fi
-
-        echo "WIN: $WIN / AREA: $AREA / WITHIN_AREA: $WITHIN_AREA"
-
 		# https://developer.mozilla.org/en-US/docs/Games/Techniques/2D_collision_detection#axis-aligned_bounding_box
 		if [ "$AREA_L" -lt "$WIN_R" ] &&
 			[ "$AREA_R" -gt "$WIN_L" ] &&
 			[ "$AREA_T" -lt "$WIN_B" ] &&
 			[ "$AREA_B" -gt "$WIN_T" ]; then
+
+            local AREA_THREE_QUARTERS=$(( (AREA / 4) * 3 ))
+            local WIN_THREE_QUARTERS=$(( (WIN / 4) * 3 ))
+            if [ "$WITHIN_AREA" -lt "$AREA_THREE_QUARTERS" ]; then
+                if [ "$WITHIN_AREA" -lt "$WIN_THREE_QUARTERS" ]; then
+                    echo "NOT ENOUGH WINDOW"
+                    return 3
+                fi
+            fi
+
+            if [ "$DIRECTION" = "left" ] && [ "$WIN_R" -gt "$AREA_R" ]; then
+                echo "WINDOW OVER CURRENT (L $WIN_R $AREA_R)"
+                return 2
+            fi
+
+            if [ "$DIRECTION" = "up" ] && [ "$WIN_B" -gt "$AREA_B" ]; then
+                echo "WINDOW OVER CURRENT (T)"
+                return 2
+            fi
+
+            if [ "$DIRECTION" = "right" ] && [ "$WIN_L" -lt "$AREA_L" ]; then
+                echo "WINDOW OVER CURRENT (R)"
+                return 2
+            fi
+
+            if [ "$DIRECTION" = "down" ] && [ "$WIN_T" -lt "$AREA_T" ]; then
+                echo "WINDOW OVER CURRENT (B)"
+                return 2
+            fi
+
+            echo "WIN: $WIN / AREA: $AREA / WITHIN_AREA: $WITHIN_AREA"
+
 			return 0
 		fi
 
-		# if within_impl "$WIN_M" "$WIN_N" "$1" "$2" "$3" "$4"; then
-		#     return 0
-		# fi
-		# if within_impl "$WIN_L" "$WIN_T" "$1" "$2" "$3" "$4"; then
-		#     return 0
-		# fi
-		# if within_impl "$WIN_L" "$WIN_B" "$1" "$2" "$3" "$4"; then
-		#     return 0
-		# fi
-		# if within_impl "$WIN_R" "$WIN_T" "$1" "$2" "$3" "$4"; then
-		#     return 0
-		# fi
-		# if within_impl "$WIN_R" "$WIN_B" "$1" "$2" "$3" "$4"; then
-		#     return 0
-		# fi
 	fi
 	return 1
 }
@@ -234,6 +220,9 @@ WINS=$(xdotool search --desktop $(xdotool get_desktop) --onlyvisible . 2>/dev/nu
 echo "$WINS"
 # ACTIVE_WIN=$(printf '0x%08x\n' "$(xdotool getactivewindow)")
 ACTIVE_WIN=$(xdotool getactivewindow)
+OLD_ACTIVE_WINDOW=$(cat ~/.fake_tile_active_window 2>/dev/null || true)
+echo "$ACTIVE_WIN" > ~/.fake_tile_active_window
+echo "OLD_ACTIVE_WINDOW: $OLD_ACTIVE_WINDOW"
 DESKTOP_WIDTH=9999
 DESKTOP_HEIGHT=9999
 
@@ -290,29 +279,50 @@ else
 fi
 
 
+SELECTED_WIN=""
+FOUND=99
 for W in $WINS; do
 	set +e
 	if [ "$(get_winid "$W")" == "$ACTIVE_WIN" ]; then
 		echo "ACTIVE WINDOW: $ACTIVE_WIN"
 		continue
 	fi
-	if within "$L" "$T" "$R" "$B" "$W" "$1"; then
-		set -e
-		echo "IN $W"
-		if [ "$1" == "right" ]; then
-			R="$(get_horiz "$W")"
-		fi
-		if [ "$1" == "left" ]; then
-			L="$(get_horiz "$W")"
-		fi
-		if [ "$1" == "up" ]; then
-			T="$(get_vert "$W")"
-		fi
-		if [ "$1" == "down" ]; then
-			B="$(get_vert "$W")"
-		fi
+    within "$L" "$T" "$R" "$B" "$W" "$1";
+    WITHIN=$?
+    echo "WITHIN $WITHIN"
+	WIN_ID="$(get_winid "$W")"
+	if [ "$WITHIN" -eq 1 ]; then
+    	echo "CONTIN"
+    	continue;
+	fi
+	set -e
+	echo "IN $W"
+	if [ "$WITHIN" -eq "0" ] && [ "$1" == "right" ]; then
+		R="$(get_horiz "$W")"
+	fi
+	if [ "$WITHIN" -eq "0" ] && [ "$1" == "left" ]; then
+		L="$(get_horiz "$W")"
+	fi
+	if [ "$WITHIN" -eq "0" ] && [ "$1" == "up" ]; then
+		T="$(get_vert "$W")"
+	fi
+	if [ "$WITHIN" -eq "0" ] && [ "$1" == "down" ]; then
+		B="$(get_vert "$W")"
+	fi
+	if [ "$WITHIN" -eq "0" ] || [ "$WITHIN" -lt "$FOUND" ]; then
 		echo "FOCUS: $(get_winid "$W")"
-		xdotool windowactivate "$(get_winid "$W")"
+		SELECTED_WIN="$WIN_ID"
+		FOUND=$WITHIN
+	fi
+	echo "( $OLD_ACTIVE_WINDOW $WIN_ID"
+	if [[ "$OLD_ACTIVE_WINDOW" = "$WIN_ID" ]]; then
+		echo "FOUND PREVIOUS WINDOW"
+        xdotool windowactivate "$SELECTED_WIN"
+		exit 0
 	fi
 	set -e
 done
+
+if [ -n "$SELECTED_WIN" ]; then
+    xdotool windowactivate "$SELECTED_WIN"
+fi
