@@ -4,18 +4,10 @@ set -euo pipefail
 IFS=$'\n\t'
 
 function positions() {
-    local OUT
-    OUT=$(xdotool getwindowgeometry "$1" | paste -d " " - - -)
-    RE="Position: ([0-9]+),([0-9]+).*Geometry: ([0-9]+)x([0-9]+)"
-    if [[ "$OUT" =~ $RE ]]; then
-        # shellcheck disable=SC2004
-        echo "$1 L:${BASH_REMATCH[1]} T:${BASH_REMATCH[2]} W:${BASH_REMATCH[3]} H:${BASH_REMATCH[4]} R:$((${BASH_REMATCH[1]} + ${BASH_REMATCH[3]})) B:$((${BASH_REMATCH[2]} + ${BASH_REMATCH[4]})) M:$((${BASH_REMATCH[1]} + ${BASH_REMATCH[3]} / 2)) N:$((${BASH_REMATCH[2]} + ${BASH_REMATCH[4]} / 2))"
-        return
-    else
-        exit 1
-    fi
+    # TODO: Deal with sticky windows, which are currently not visible as they have a desktop of -1
+    local DESKTOP=$1
+    wmctrl -l -G | awk -v DESKTOP="$DESKTOP" '$2 == DESKTOP { print strtonum($1), "L:" $3, "T:" $4, "W:" $5, "H:" $6, "R:" ($3+$5), "B:" ($4+$6), "M:" int($3+($5/2)), "N:" int($4+($6/2)) }'
 }
-export -f positions
 
 function left_area() {
 	local RE="L:([0-9]+).*T:([0-9]+).*B:([0-9]+)"
@@ -215,10 +207,8 @@ function get_winid() {
 }
 
 DESKTOP=$(xdotool get_desktop)
-# WINS=$(wmctrl -l | grep "[^ ]\+ \+$DESKTOP " | sed 's/ .*//' | parallel --halt now,fail=1 positions {} | sort)
-WINS=$(xdotool search --desktop $(xdotool get_desktop) --onlyvisible . 2>/dev/null | parallel --halt now,fail=1 positions {} | sort)
+WINS=$(positions "$DESKTOP")
 echo "$WINS"
-# ACTIVE_WIN=$(printf '0x%08x\n' "$(xdotool getactivewindow)")
 ACTIVE_WIN=$(xdotool getactivewindow)
 OLD_ACTIVE_WINDOW=$(cat ~/.fake_tile_active_window 2>/dev/null || true)
 echo "$ACTIVE_WIN" > ~/.fake_tile_active_window
