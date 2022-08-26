@@ -1,0 +1,251 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+
+function within() {
+
+	local WIN_RE="L:([0-9]+).*T:([0-9]+).*W:([0-9]+).*H:([0-9]+).*R:([0-9]+).*B:([0-9]+).*M:([0-9]+).*N:([0-9]+)"
+	local AREA_L="$1"
+	local AREA_R="$3"
+	local AREA_W="$2"
+	local AREA_H="$4"
+	local DIRECTION="$6"
+
+	if [[ ! "$5" =~ $WIN_RE ]]; then
+        return 1
+    fi
+	local WIN_L="${BASH_REMATCH[1]}"
+	local WIN_T="${BASH_REMATCH[2]}"
+	# WIN_W="${BASH_REMATCH[3]}"
+	# WIN_H="${BASH_REMATCH[4]}"
+	local WIN_R="${BASH_REMATCH[5]}"
+	local WIN_B="${BASH_REMATCH[6]}"
+	local WIN_M="${BASH_REMATCH[7]}"
+	local WIN_N="${BASH_REMATCH[8]}"
+
+	echo "== ($1 $3 $2 $4)"
+	echo "WIN_L = $WIN_L"
+	echo "WIN_T = $WIN_T"
+	echo "WIN_R = $WIN_R"
+	echo "WIN_B = $WIN_B"
+	echo "WIN_M = $WIN_M"
+	echo "WIN_N = $WIN_N"
+
+    local L="$WIN_L"
+    local R="$WIN_R"
+
+
+    if [ "$L" -lt "$AREA_L" ]; then
+        L="$AREA_L"
+    fi
+
+    if [ "$R" -gt "$AREA_R" ]; then
+        R="$AREA_R"
+    fi
+
+
+    local AREA=1
+    local WIN=1
+    local WITHIN_AREA=0
+    echo "> $DIRECTION"
+    if [ "$DIRECTION" = "left" ] || [ "$DIRECTION" = "right" ]; then
+        local T="$WIN_T"
+        local B="$WIN_B"
+        AREA=$(( AREA_B - AREA_T ));
+        WIN=$(( WIN_B - WIN_T ));
+        if [ "$T" -lt "$AREA_T" ]; then
+            T="$AREA_T"
+        fi
+        if [ "$B" -gt "$AREA_B" ]; then
+            B="$AREA_B"
+        fi
+        WITHIN_AREA=$(( ( B - T ) ));
+    fi
+    if [ "$DIRECTION" = "up" ] || [ "$DIRECTION" = "down" ]; then
+        local L="$WIN_L"
+        local R="$WIN_R"
+        AREA=$(( AREA_R - AREA_L ));
+        WIN=$(( WIN_R - WIN_L ));
+        if [ "$L" -lt "$AREA_L" ]; then
+            L="$AREA_L"
+        fi
+        if [ "$R" -gt "$AREA_R" ]; then
+            R="$AREA_R"
+        fi
+        WITHIN_AREA=$(( ( R - L ) ));
+    fi
+
+	# https://developer.mozilla.org/en-US/docs/Games/Techniques/2D_collision_detection#axis-aligned_bounding_box
+	if [ "$AREA_L" -lt "$WIN_R" ] &&
+		[ "$AREA_R" -gt "$WIN_L" ] &&
+		[ "$AREA_T" -lt "$WIN_B" ] &&
+		[ "$AREA_B" -gt "$WIN_T" ]; then
+
+        local AREA_THREE_QUARTERS=$(( (AREA / 4) * 3 ))
+        local WIN_THREE_QUARTERS=$(( (WIN / 4) * 3 ))
+        if [ "$WITHIN_AREA" -lt "$AREA_THREE_QUARTERS" ]; then
+            if [ "$WITHIN_AREA" -lt "$WIN_THREE_QUARTERS" ]; then
+                echo "NOT ENOUGH WINDOW"
+                return 3
+            fi
+        fi
+
+        if [ "$DIRECTION" = "left" ] && [ "$WIN_R" -gt "$AREA_R" ]; then
+            echo "WINDOW OVER CURRENT (L $WIN_R $AREA_R)"
+            return 2
+        fi
+
+        if [ "$DIRECTION" = "up" ] && [ "$WIN_B" -gt "$AREA_B" ]; then
+            echo "WINDOW OVER CURRENT (T)"
+            return 2
+        fi
+
+        if [ "$DIRECTION" = "right" ] && [ "$WIN_L" -lt "$AREA_L" ]; then
+            echo "WINDOW OVER CURRENT (R)"
+            return 2
+        fi
+
+        if [ "$DIRECTION" = "down" ] && [ "$WIN_T" -lt "$AREA_T" ]; then
+            echo "WINDOW OVER CURRENT (B)"
+            return 2
+        fi
+
+        echo "WIN: $WIN / AREA: $AREA / WITHIN_AREA: $WITHIN_AREA"
+
+		return 0
+	fi
+
+	return 1
+}
+
+
+show_help() {
+    echo "NAME:"
+    echo "  $0 - Bash based PaperWM like thing"
+    echo ""
+    echo "GLOBAL OPTIONS:"
+    echo "  -t TEST ARG... Builds an area spec"
+    echo "  -s [+-]N [+-]M Shift the screen +/- N pixels to the right and +/- M pixels to the bottom"
+    echo "  -h    Get (this) help"
+    echo ""
+    exit 0
+}
+
+ACTION_TEST=""
+PIXELSHIFT=""
+
+while getopts "ht:s:" opt; do
+    case "$opt" in
+        h)
+            show_help
+            exit 0
+            ;;
+        t)
+            ACTION_TEST="$OPTARG"
+            ;;
+        s)
+            PIXELSHIFT="$OPTARG"
+            ;;
+        *)
+            # echo "INVALID FLAG"
+            # exit 1
+    esac
+done
+
+function build_spec() {
+    echo "$1 _ $2 $3 $4 $5" | awk '{ print $1, "L:" $3, "T:" $4, "W:" $5, "H:" $6, "R:" ($3+$5), "B:" ($4+$6), "M:" int($3+($5/2)), "N:" int($4+($6/2)) }'
+}
+
+function identify_screen() {
+    cat /dev/stdin | awk 'BEGIN { screen="" }
+    $2 == "connected" { screen = $1 }
+    $1 ~ /^[0-9]+x[0-9]+/ && $2 ~ /^[0-9\.]+\*/ { gsub(/[^0-9x]/, "", $1); gsub("x", " ", $1); printf "%s %s\n", screen, $1 }
+    '
+}
+
+function xdotool_windowshift() {
+
+    local OFFSET_X_NEG=0
+    local OFFSET_Y_NEG=0
+    local OFFSET_X="$1"
+    local OFFSET_Y="$2"
+    OFFSET_X="$( echo $OFFSET_X | sed 's/[^0-9\+]//g')"
+    OFFSET_Y="$( echo $OFFSET_Y | sed 's/[^0-9\+]//g')"
+	local RE="^\-"
+	if [[ "$OFFSET_X" =~ $RE ]]; then
+    	OFFSET_X_NEG=1
+    fi
+	if [[ "$OFFSET_Y" =~ $RE ]]; then
+    	OFFSET_Y_NEG=1
+    fi
+
+    SPLIT=( $3 )
+    local WINDOW_ID=${SPLIT[0]}
+    local CUR_X=${SPLIT[1]}
+    local CUR_Y=${SPLIT[2]}
+
+	CUR_X=$(( "$CUR_X" + "$OFFSET_X" ))
+	CUR_Y=$(( "$CUR_Y" + "$OFFSET_Y" ))
+
+	if [ "$OFFSET_X_NEG" -gt 0 ]; then
+    	CUR_X=$(( "$CUR_X" - ( "$OFFSET_X" * 2 ) ))
+    fi
+	if [ "$OFFSET_Y_NEG" -gt 0 ]; then
+    	CUR_Y=$(( "$CUR_Y" - ( "$OFFSET_Y" * 2 ) ))
+	fi
+
+    xdotool windowmove "$WINDOW_ID" "$CUR_X" "$CUR_Y"
+}
+
+function xdotool_getwindowgeometry_to_details() {
+    cat /dev/stdin | sed 's/^ \+//' | awk -F '[ x,]' '$1 == "Window" { i=$2 } $1 == "Position:" { x=$2; y=$3 } $1 == "Geometry:" { w=$2; h=$3 } END { print x, y, w, h }'
+}
+
+function list_windows() {
+    xdotool search --desktop "$(xdotool get_desktop)" --all .  2>/dev/null | grep '^[0-9]'
+}
+
+function test_build_spec() {
+    build_spec $@
+}
+
+function test_identify_screen() {
+    cat /dev/stdin | sed 's/ \+$//' | identify_screen
+}
+
+function test_xdotool_getwindowgeometry_to_details() {
+    cat /dev/stdin | xdotool_getwindowgeometry_to_details
+}
+
+function xdotool_xprop_getwindowgeometry() {
+    local FRAME="$(xprop -id "$1" | grep _NET_FRAME_EXTENTS | awk -F [=,] '{print gensub(/.*([0-9]+), *([0-9]+), *([0-9]+), *([0-9]+).*/, "\\1 \\2 \\3 \\4", "g", $0)}')"
+    local WIN="$(xdotool getwindowgeometry "$1" | xdotool_getwindowgeometry_to_details)"
+    local FRAME_LRTB=( $FRAME )
+    local WIN_XYWH=( $WIN )
+    local X=$(( ${WIN_XYWH[0]} - ${FRAME_LRTB[0]} ))
+    local Y=$(( ${WIN_XYWH[1]} - ${FRAME_LRTB[2]} ))
+    if xprop -id "$1"  | grep '_NET_WM_BYPASS_COMPOSITOR.*2' > /dev/null; then
+        local X=$(( ${WIN_XYWH[0]} - ( ${FRAME_LRTB[0]} * 2) ))
+        local Y=$(( ${WIN_XYWH[1]} - ( ${FRAME_LRTB[2]} * 2) ))
+    fi
+    local W=$(( ${WIN_XYWH[2]} + ${FRAME_LRTB[0]} + ${FRAME_LRTB[1]} ))
+    local H=$(( ${WIN_XYWH[3]} + ${FRAME_LRTB[2]} + ${FRAME_LRTB[3]} ))
+    echo "$1 $X $Y $W $H"
+}
+
+
+if [ ! -z "$ACTION_TEST" ]; then
+    shift $(( OPTIND - 1 ))
+    test_"$ACTION_TEST" $@
+fi
+
+if [ ! -z "$PIXELSHIFT" ]; then
+    shift 1
+    export -f xdotool_getwindowgeometry_to_details
+    export -f xdotool_xprop_getwindowgeometry
+    export -f xdotool_windowshift
+    SHIFT_X="$1"
+    SHIFT_Y="$2"
+    list_windows | parallel xdotool_xprop_getwindowgeometry {} '|' parallel xdotool_windowshift "$SHIFT_X" "$SHIFT_Y"
+fi
