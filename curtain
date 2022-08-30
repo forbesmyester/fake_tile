@@ -1,123 +1,18 @@
 #!/bin/bash
 set -euo pipefail
-IFS=$'\n\t'
+IFS=$' \n\t'
 
-
-function within() {
-
-	local WIN_RE="L:([0-9]+).*T:([0-9]+).*W:([0-9]+).*H:([0-9]+).*R:([0-9]+).*B:([0-9]+).*M:([0-9]+).*N:([0-9]+)"
-	local AREA_L="$1"
-	local AREA_R="$3"
-	local AREA_W="$2"
-	local AREA_H="$4"
-	local DIRECTION="$6"
-
-	if [[ ! "$5" =~ $WIN_RE ]]; then
-        return 1
-    fi
-	local WIN_L="${BASH_REMATCH[1]}"
-	local WIN_T="${BASH_REMATCH[2]}"
-	# WIN_W="${BASH_REMATCH[3]}"
-	# WIN_H="${BASH_REMATCH[4]}"
-	local WIN_R="${BASH_REMATCH[5]}"
-	local WIN_B="${BASH_REMATCH[6]}"
-	local WIN_M="${BASH_REMATCH[7]}"
-	local WIN_N="${BASH_REMATCH[8]}"
-
-	echo "== ($1 $3 $2 $4)"
-	echo "WIN_L = $WIN_L"
-	echo "WIN_T = $WIN_T"
-	echo "WIN_R = $WIN_R"
-	echo "WIN_B = $WIN_B"
-	echo "WIN_M = $WIN_M"
-	echo "WIN_N = $WIN_N"
-
-    local L="$WIN_L"
-    local R="$WIN_R"
-
-
-    if [ "$L" -lt "$AREA_L" ]; then
-        L="$AREA_L"
-    fi
-
-    if [ "$R" -gt "$AREA_R" ]; then
-        R="$AREA_R"
-    fi
-
-
-    local AREA=1
-    local WIN=1
-    local WITHIN_AREA=0
-    echo "> $DIRECTION"
-    if [ "$DIRECTION" = "left" ] || [ "$DIRECTION" = "right" ]; then
-        local T="$WIN_T"
-        local B="$WIN_B"
-        AREA=$(( AREA_B - AREA_T ));
-        WIN=$(( WIN_B - WIN_T ));
-        if [ "$T" -lt "$AREA_T" ]; then
-            T="$AREA_T"
-        fi
-        if [ "$B" -gt "$AREA_B" ]; then
-            B="$AREA_B"
-        fi
-        WITHIN_AREA=$(( ( B - T ) ));
-    fi
-    if [ "$DIRECTION" = "up" ] || [ "$DIRECTION" = "down" ]; then
-        local L="$WIN_L"
-        local R="$WIN_R"
-        AREA=$(( AREA_R - AREA_L ));
-        WIN=$(( WIN_R - WIN_L ));
-        if [ "$L" -lt "$AREA_L" ]; then
-            L="$AREA_L"
-        fi
-        if [ "$R" -gt "$AREA_R" ]; then
-            R="$AREA_R"
-        fi
-        WITHIN_AREA=$(( ( R - L ) ));
-    fi
-
-	# https://developer.mozilla.org/en-US/docs/Games/Techniques/2D_collision_detection#axis-aligned_bounding_box
-	if [ "$AREA_L" -lt "$WIN_R" ] &&
-		[ "$AREA_R" -gt "$WIN_L" ] &&
-		[ "$AREA_T" -lt "$WIN_B" ] &&
-		[ "$AREA_B" -gt "$WIN_T" ]; then
-
-        local AREA_THREE_QUARTERS=$(( (AREA / 4) * 3 ))
-        local WIN_THREE_QUARTERS=$(( (WIN / 4) * 3 ))
-        if [ "$WITHIN_AREA" -lt "$AREA_THREE_QUARTERS" ]; then
-            if [ "$WITHIN_AREA" -lt "$WIN_THREE_QUARTERS" ]; then
-                echo "NOT ENOUGH WINDOW"
-                return 3
-            fi
-        fi
-
-        if [ "$DIRECTION" = "left" ] && [ "$WIN_R" -gt "$AREA_R" ]; then
-            echo "WINDOW OVER CURRENT (L $WIN_R $AREA_R)"
-            return 2
-        fi
-
-        if [ "$DIRECTION" = "up" ] && [ "$WIN_B" -gt "$AREA_B" ]; then
-            echo "WINDOW OVER CURRENT (T)"
-            return 2
-        fi
-
-        if [ "$DIRECTION" = "right" ] && [ "$WIN_L" -lt "$AREA_L" ]; then
-            echo "WINDOW OVER CURRENT (R)"
-            return 2
-        fi
-
-        if [ "$DIRECTION" = "down" ] && [ "$WIN_T" -lt "$AREA_T" ]; then
-            echo "WINDOW OVER CURRENT (B)"
-            return 2
-        fi
-
-        echo "WIN: $WIN / AREA: $AREA / WITHIN_AREA: $WITHIN_AREA"
-
-		return 0
-	fi
-
-	return 1
-}
+export X_DIRECTION_GEOM_SLACK=256
+export Y_DIRECTION_BUFFER="0 2"
+ACTION_TEST=""
+PIXELSHIFT=""
+CENTER=""
+COLUMN=""
+DIR=""
+SWAP=""
+MOVE=""
+GAP=""
+REPORT=""
 
 
 show_help() {
@@ -127,15 +22,20 @@ show_help() {
     echo "GLOBAL OPTIONS:"
     echo "  -t TEST ARG... Builds an area spec"
     echo "  -s [+-]N [+-]M Shift the screen +/- N pixels to the right and +/- M pixels to the bottom"
+    echo "  -c Centre the active window"
+    echo "  -g Gap fix (around column)"
+    echo "  -o Fix this column"
+    echo "  -d [hjkl] Focus in the direction"
+    echo "  -w [hjkl] Swap in the direction"
+    echo "  -M"
+    echo "  -R"
     echo "  -h    Get (this) help"
     echo ""
     exit 0
 }
 
-ACTION_TEST=""
-PIXELSHIFT=""
 
-while getopts "ht:s:" opt; do
+while getopts "hgd:M:Rct:s:ow:" opt; do
     case "$opt" in
         h)
             show_help
@@ -147,15 +47,38 @@ while getopts "ht:s:" opt; do
         s)
             PIXELSHIFT="$OPTARG"
             ;;
+        c)
+            CENTER="1"
+            ;;
+        o)
+            COLUMN="1"
+            ;;
+        g)
+            GAP="1"
+            ;;
+        d)
+            DIR="$OPTARG"
+            ;;
+        w)
+            SWAP="$OPTARG"
+            ;;
+        M)
+            MOVE="$OPTARG"
+            ;;
+        R)
+            REPORT="1"
+            ;;
         *)
             # echo "INVALID FLAG"
             # exit 1
     esac
 done
 
+
 function build_spec() {
     echo "$1 _ $2 $3 $4 $5" | awk '{ print $1, "L:" $3, "T:" $4, "W:" $5, "H:" $6, "R:" ($3+$5), "B:" ($4+$6), "M:" int($3+($5/2)), "N:" int($4+($6/2)) }'
 }
+
 
 function identify_screen() {
     cat /dev/stdin | awk 'BEGIN { screen="" }
@@ -164,14 +87,54 @@ function identify_screen() {
     '
 }
 
+function xdotool_getdisplaygeometry() {
+    xdotool getdisplaygeometry
+}
+
+
+function window_visible() {
+    local GEOM_X="$1"
+    local GEOM_Y="$2"
+    local CUR_X="$3"
+    local CUR_Y="$4"
+    local CUR_W="$5"
+    local CUR_H="$6"
+
+	local CUR_XX=$(( $CUR_X + $CUR_W ))
+	local CUR_YY=$(( $CUR_Y + $CUR_H ))
+
+	local MIN_GEOM_XY=$(( 0 + $X_DIRECTION_GEOM_SLACK ))
+	local MAX_GEOM_X=$(( $GEOM_X - $X_DIRECTION_GEOM_SLACK ))
+	local MAX_GEOM_Y=$(( $GEOM_Y - $X_DIRECTION_GEOM_SLACK ))
+
+    local INVISIBLE=0
+
+	if [ "$CUR_XX" -lt $MIN_GEOM_XY ] || [ "$CUR_YY" -lt $MIN_GEOM_XY ]; then
+	    INVISIBLE=1
+    fi
+	if [ "$CUR_X" -gt $MAX_GEOM_X ] || [ "$CUR_Y" -gt $MAX_GEOM_Y ]; then
+	    INVISIBLE=1
+    fi
+    # echo "GN $MIN_GEOM_XY"
+    # echo "GNXY $MAX_GEOM_X $MAX_GEOM_Y"
+    # echo "X $CUR_X $CUR_W $CUR_XX"
+    # echo "Y $CUR_Y $CUR_H $CUR_YY"
+    # echo "INV $INVISIBLE"
+    return $INVISIBLE
+}
+
+
 function xdotool_windowshift() {
+    # echo "1: $1"
+    # echo "2: $2"
+    # echo "3: $3"
+    # echo "4: $4"
+    # echo "5: $5"
 
     local OFFSET_X_NEG=0
     local OFFSET_Y_NEG=0
     local OFFSET_X="$1"
     local OFFSET_Y="$2"
-    OFFSET_X="$( echo $OFFSET_X | sed 's/[^0-9\+]//g')"
-    OFFSET_Y="$( echo $OFFSET_Y | sed 's/[^0-9\+]//g')"
 	local RE="^\-"
 	if [[ "$OFFSET_X" =~ $RE ]]; then
     	OFFSET_X_NEG=1
@@ -179,11 +142,18 @@ function xdotool_windowshift() {
 	if [[ "$OFFSET_Y" =~ $RE ]]; then
     	OFFSET_Y_NEG=1
     fi
+    OFFSET_X="$( echo $OFFSET_X | sed 's/[^0-9\+]//g')"
+    OFFSET_Y="$( echo $OFFSET_Y | sed 's/[^0-9\+]//g')"
 
-    SPLIT=( $3 )
+    local SPLIT=( $5 )
     local WINDOW_ID=${SPLIT[0]}
     local CUR_X=${SPLIT[1]}
     local CUR_Y=${SPLIT[2]}
+    local CUR_W=${SPLIT[3]}
+    local CUR_H=${SPLIT[4]}
+
+    local GEOM_X="$3"
+    local GEOM_Y="$4"
 
 	CUR_X=$(( "$CUR_X" + "$OFFSET_X" ))
 	CUR_Y=$(( "$CUR_Y" + "$OFFSET_Y" ))
@@ -195,43 +165,234 @@ function xdotool_windowshift() {
     	CUR_Y=$(( "$CUR_Y" - ( "$OFFSET_Y" * 2 ) ))
 	fi
 
-    xdotool windowmove "$WINDOW_ID" "$CUR_X" "$CUR_Y"
+
+    window_move "1 $GEOM_X $GEOM_Y $WINDOW_ID $CUR_X $CUR_Y $CUR_W $CUR_H"
+    # if window_visible "$GEOM_X" "$GEOM_Y" "$CUR_X" "$CUR_Y" "$CUR_W" "$CUR_H"; then
+    #     # xdotool windowraise "$WINDOW_ID"
+    #     xprop -id "$WINDOW_ID" -f _CURTAIN_XYWH 8s -set _CURTAIN_XYWH ""
+    # else
+    #     xdotool windowminimize "$WINDOW_ID"
+    #     xprop -id "$WINDOW_ID" -f _CURTAIN_XYWH 8s -set _CURTAIN_XYWH "$CUR_X $CUR_Y $CUR_W $CUR_H"
+    # fi
 }
+
 
 function xdotool_getwindowgeometry_to_details() {
     cat /dev/stdin | sed 's/^ \+//' | awk -F '[ x,]' '$1 == "Window" { i=$2 } $1 == "Position:" { x=$2; y=$3 } $1 == "Geometry:" { w=$2; h=$3 } END { print x, y, w, h }'
 }
 
+
 function list_windows() {
     xdotool search --desktop "$(xdotool get_desktop)" --all .  2>/dev/null | grep '^[0-9]'
 }
+
+
+function xprop_details() {
+    cat /dev/stdin | awk -F '=' 'NF < 2 { next } {printf("%s=", gensub(/^ *(.*[^ ])\(.*/, "\\1", "g", $1)) } $2 ~ /"/ { print gensub(/^ *"(.*)" *$/, "\\1", "g", $2); next } { print(gensub(/^ *(.*[^ ]) *$/, "\\1", "g", $2)) }'
+}
+
+
+function details_value {
+    cat /dev/stdin | awk -v K="$1" -F '=' '$1 == K { print $2 }'
+}
+
+
+function xdotool_xprop_getwindowgeometry() {
+    local XPROPS="$(xprop -id $1 | xprop_details)"
+    local XPROP_MINIM="$(echo "$XPROPS" | details_value _NET_WM_STATE | awk 'BEGIN { m=0 } $0 ~ /_NET_WM_STATE_HIDDEN/ { m=1 } END { print m }' )"
+    local XPROP_GEOM="$(echo "$XPROPS" | details_value _CURTAIN_XYWH)"
+    if [ "$XPROP_MINIM" -gt 0 ] && [ ! -z "$XPROP_GEOM" ]; then
+        echo $1 $XPROP_GEOM
+        return 0
+    fi
+    local FRAME="$(xprop -id "$1" | grep _NET_FRAME_EXTENTS | awk -F [=,] '{print gensub(/.*([0-9]+), *([0-9]+), *([0-9]+), *([0-9]+).*/, "\\1 \\2 \\3 \\4", "g", $0)}')"
+    local WIN="$(xdotool getwindowgeometry "$1" | xdotool_getwindowgeometry_to_details)"
+    local FRAME_LRTB=( $FRAME )
+    local WIN_XYWH=( $WIN )
+    local X=$(( ${WIN_XYWH[0]} - (${FRAME_LRTB[0]} * 2) ))
+    local Y=$(( ${WIN_XYWH[1]} - (${FRAME_LRTB[2]} * 2) ))
+    local W=$(( ${WIN_XYWH[2]} + (${FRAME_LRTB[0]} + ${FRAME_LRTB[1]}) ))
+    local H=$(( ${WIN_XYWH[3]} + (${FRAME_LRTB[2]} + ${FRAME_LRTB[3]}) ))
+    echo "$1 $X $Y $W $H"
+}
+
+
+function windows_in_column() {
+    # export -f xdotool_xprop_getwindowgeometry
+    # cat /dev/stdin | parallel xdotool_xprop_getwindowgeometry "$1"
+    # echo "> $1, $2, $3"
+    local SELECTED_WIN="$1"
+    local SCREEN_TOP="$2"
+    local SCREEN_HEIGHT="$3"
+
+    cat /dev/stdin | \
+        awk -v SELECTED_WIN="$SELECTED_WIN" '
+            # Put the selected window at the top
+            $1!=SELECTED_WIN { print NR, $0 }
+            $1==SELECTED_WIN { FOUND=$0 }
+            END {
+                if (FOUND) {
+                        print NR+1, FOUND
+                }
+            }
+            ' | \
+        sort -r | \
+        sed 's/[0-9]\+ //' | \
+        awk -v CENTER_OR_EDGE=1 -v SELECTED_WIN="$SELECTED_WIN" '
+            BEGIN { COL_LEFT="UN"; COL_RIGHT="UN"; LEFT="UN"; ITEMS_INDEX=0  }
+            # Output column details then windows in column, identified by current selected window (top).
+            LEFT=="UN" {
+                LEFT=$2
+                WIDTH=$4
+                RIGHT=$2+WIDTH
+                COL_LEFT=LEFT
+                COL_RIGHT=RIGHT
+                COL_TOP=$3
+                COL_BOT=$3+$5
+                COL_HEIGHT=0
+            }
+            { ADD = 0 }
+            CENTER_OR_EDGE == 0 {
+                CENTER=$2 + ($4 / 2)
+                if ((CENTER <= RIGHT) && (CENTER >= LEFT)) {
+                    ADD = 1
+                }
+            }
+            CENTER_OR_EDGE == 1 {
+                LINE_LEFT=$2
+                LINE_RIGHT=$2+$4
+                if ((LINE_LEFT < LEFT) && (LINE_RIGHT < LEFT)) { next }
+                if ((LINE_LEFT > RIGHT) && (LINE_RIGHT > RIGHT)) { next }
+                ADD = 1
+            }
+            ADD == 1 {
+                ITEMS[ITEMS_INDEX] = $0; ITEMS_INDEX = ITEMS_INDEX + 1
+                if (COL_LEFT > $2) { COL_LEFT = $2 }
+                if (COL_RIGHT < $2 + $4) { COL_RIGHT = $2 + $4 }
+                if (($3 + $5) > COL_BOT) { COL_BOT = $3 + $5 }
+                if ($3 < COL_TOP) { COL_TOP = $3 }
+                COL_HEIGHT = COL_HEIGHT + $5
+            }
+            END {
+                print SELECTED_WIN, COL_LEFT, COL_TOP, (COL_RIGHT - COL_LEFT), COL_HEIGHT
+                for (I in ITEMS) {
+                    print ITEMS[I]
+                }
+            }' | \
+        awk -v SCREEN_TOP="$SCREEN_TOP" -v SCREEN_HEIGHT="$SCREEN_HEIGHT" '
+            # Scale and force windows into the column (does make windows not overlap)
+            NR == 1 {
+                SELECTED_WIN = $1
+                COL_LEFT = $2; COL_TOP = $3; COL_WIDTH = $4; COL_HEIGHT = $5
+                SCREEN_OF_COL_FRACTION = SCREEN_HEIGHT / COL_HEIGHT
+                # print "COL_HEIGHT=" COL_HEIGHT, "SCREEN_HEIGHT=" SCREEN_HEIGHT, COL_WIDTH
+                SCREEN_BOT = SCREEN_TOP + SCREEN_HEIGHT
+                SHIFT_SCREEN = SCREEN_TOP - COP_TOP
+                # print "COL_TOP=", COL_TOP " COL_HEIGHT=", COL_HEIGHT
+                next
+            }
+            {
+                WIN_TOP = $3
+                WIN_ACT_HEIGHT = $5
+                if (WIN_ACT_HEIGHT > SCREEN_HEIGHT) { WIN_ACT_HEIGHT = SCREEN_HEIGHT }
+                WIN_HEIGHT = int(SCREEN_HEIGHT / (COL_HEIGHT / WIN_ACT_HEIGHT))
+                WIN_BOT = WIN_TOP + WIN_HEIGHT
+                print $1, COL_LEFT, int(WIN_TOP + (WIN_HEIGHT / 2)), COL_WIDTH, WIN_HEIGHT
+            }
+            ' | \
+            sort -n -k 3 | \
+        awk -v SCREEN_TOP="$SCREEN_TOP" -v SCREEN_HEIGHT="$SCREEN_HEIGHT" '
+            BEGIN { WIN_TOP=SCREEN_TOP }
+            {
+                print $1, $2, WIN_TOP, $4, $5
+                WIN_TOP = WIN_TOP + $5
+            }
+            '
+}
+
+function test_windows_in_column() {
+    cat /dev/stdin | windows_in_column "$1" "$2" "$3"
+}
+
 
 function test_build_spec() {
     build_spec $@
 }
 
+
 function test_identify_screen() {
     cat /dev/stdin | sed 's/ \+$//' | identify_screen
 }
+
 
 function test_xdotool_getwindowgeometry_to_details() {
     cat /dev/stdin | xdotool_getwindowgeometry_to_details
 }
 
-function xdotool_xprop_getwindowgeometry() {
-    local FRAME="$(xprop -id "$1" | grep _NET_FRAME_EXTENTS | awk -F [=,] '{print gensub(/.*([0-9]+), *([0-9]+), *([0-9]+), *([0-9]+).*/, "\\1 \\2 \\3 \\4", "g", $0)}')"
-    local WIN="$(xdotool getwindowgeometry "$1" | xdotool_getwindowgeometry_to_details)"
-    local FRAME_LRTB=( $FRAME )
-    local WIN_XYWH=( $WIN )
-    local X=$(( ${WIN_XYWH[0]} - ${FRAME_LRTB[0]} ))
-    local Y=$(( ${WIN_XYWH[1]} - ${FRAME_LRTB[2]} ))
-    if xprop -id "$1"  | grep '_NET_WM_BYPASS_COMPOSITOR.*2' > /dev/null; then
-        local X=$(( ${WIN_XYWH[0]} - ( ${FRAME_LRTB[0]} * 2) ))
-        local Y=$(( ${WIN_XYWH[1]} - ( ${FRAME_LRTB[2]} * 2) ))
+
+function test_xprop_details() {
+    cat /dev/stdin | xprop_details
+}
+
+
+function pixelshift() {
+    export -f xdotool_getwindowgeometry_to_details
+    export -f xdotool_xprop_getwindowgeometry
+    export -f xdotool_windowshift
+    export -f xdotool_getdisplaygeometry
+    export -f window_visible
+    export -f details_value
+    export -f xprop_details
+    export -f window_move
+    SHIFT_X="$1"
+    SHIFT_Y="$2"
+    list_windows | parallel xdotool_xprop_getwindowgeometry {} '|' parallel xdotool_windowshift "$SHIFT_X" "$SHIFT_Y" $(xdotool_getdisplaygeometry)
+}
+
+
+function window_move() {
+    # echo "MOVE: $1"
+    local SPLIT=( $@ )
+    local MODE=${SPLIT[0]}
+    local GEOM_X=${SPLIT[1]}
+    local GEOM_Y=${SPLIT[2]}
+    local WINDOW_ID=${SPLIT[3]}
+    local X=${SPLIT[4]}
+    local Y=${SPLIT[5]}
+    local W=${SPLIT[6]}
+    local H=${SPLIT[7]}
+    # echo "> $MODE $GEOM_X $GEOM_Y $WINDOW_ID $X $Y $W $H"
+
+    local XPROPS="$(xprop -id $WINDOW_ID | xprop_details)"
+    local XPROPS_FRAME="$(echo "$XPROPS" | details_value _NET_FRAME_EXTENTS | awk -F [=,] ' { print gensub(/.*([0-9]+), *([0-9]+), *([0-9]+), *([0-9]+).*/, "\\1 \\2 \\3 \\4", "g", $0) }')"
+
+    # echo "XPROPS: $XPROPS"
+    # echo "XPROPS_FRAME: $XPROPS_FRAME"
+    local FRAME_LRTB=( $XPROPS_FRAME )
+    X=$(( ${X} + ${FRAME_LRTB[0]} ))
+    Y=$(( ${Y} + ${FRAME_LRTB[2]} ))
+    W=$(( ${W} - (${FRAME_LRTB[0]} + ${FRAME_LRTB[1]}) ))
+    H=$(( ${H} - (${FRAME_LRTB[2]} + ${FRAME_LRTB[3]}) ))
+    local XPROPS_COMPSITOR="$(echo "$XPROPS" | details_value _NET_WM_BYPASS_COMPOSITOR)"
+    if [ "$XPROPS_COMPSITOR" == "2" ]; then
+        X=$(( $X - ${FRAME_LRTB[0]} ))
+        Y=$(( $Y - ${FRAME_LRTB[2]} ))
     fi
-    local W=$(( ${WIN_XYWH[2]} + ${FRAME_LRTB[0]} + ${FRAME_LRTB[1]} ))
-    local H=$(( ${WIN_XYWH[3]} + ${FRAME_LRTB[2]} + ${FRAME_LRTB[3]} ))
-    echo "$1 $X $Y $W $H"
+    if window_visible "$GEOM_X" "$GEOM_Y" "$X" "$Y" "$W" "$H"; then
+        if [ "$MODE" -eq 1 ] || [ "$MODE" -eq 3 ]; then
+            xdotool windowmove "$WINDOW_ID" "$X" "$Y"
+        fi
+        if [ "$MODE" -eq 2 ] || [ "$MODE" -eq 3 ]; then
+            xdotool windowsize "$WINDOW_ID" "$W" "$H"
+        fi
+        xprop -id "$WINDOW_ID" -f _CURTAIN_XYWH 8s -set _CURTAIN_XYWH ""
+        xdotool windowactivate "$WINDOW_ID"
+    else
+        xdotool windowminimize "$WINDOW_ID"
+        # TODO: Do setting respect mode perhaps
+        xprop -id "$WINDOW_ID" -f _CURTAIN_XYWH 8s -set _CURTAIN_XYWH "$X $Y $W $H"
+    fi
+
 }
 
 
@@ -240,12 +401,235 @@ if [ ! -z "$ACTION_TEST" ]; then
     test_"$ACTION_TEST" $@
 fi
 
+
 if [ ! -z "$PIXELSHIFT" ]; then
     shift 1
-    export -f xdotool_getwindowgeometry_to_details
+    ACTIVE_WINDOW="$(xdotool getactivewindow)"
+    pixelshift "$1" "$2"
+    xdotool windowactivate "$ACTIVE_WINDOW"
+fi
+
+
+if [ ! -z "$CENTER" ]; then
+    shift 1
+    echo "HERE"
+    xdotool_xprop_getwindowgeometry "$(xdotool getactivewindow)"
+    S_WIN_GEOM="$(xdotool_xprop_getwindowgeometry "$(xdotool getactivewindow)")"
+    echo "> $S_WIN_GEOM"
+    S_DISP_GEOM="$(xdotool_getdisplaygeometry)"
+    WIN_GEOM=( $S_WIN_GEOM )
+    DISP_GEOM=( $S_DISP_GEOM )
+    XSHIFT=$(( (${DISP_GEOM[0]} / 2) - (${WIN_GEOM[1]} + (${WIN_GEOM[3]} / 2))  ))
+    ACTIVE_WINDOW="$(xdotool getactivewindow)"
+    pixelshift "$XSHIFT" 0
+    xdotool windowactivate "$ACTIVE_WINDOW"
+fi
+
+
+if [ ! -z "$COLUMN" ]; then
+    export -f details_value
+    export -f window_visible
+    export -f window_move
+    export -f xprop_details
     export -f xdotool_xprop_getwindowgeometry
-    export -f xdotool_windowshift
-    SHIFT_X="$1"
-    SHIFT_Y="$2"
-    list_windows | parallel xdotool_xprop_getwindowgeometry {} '|' parallel xdotool_windowshift "$SHIFT_X" "$SHIFT_Y"
+    export -f xdotool_getwindowgeometry_to_details
+    DISP_GEOM="$(xdotool_getdisplaygeometry)"
+    S_DISP_HEIGHT="$(echo "$DISP_GEOM" | sed 's/.* //')"
+    Y_MIN="$(echo "$Y_DIRECTION_BUFFER" | sed 's/ .*//')"
+    Y_MAX="$(echo "$Y_DIRECTION_BUFFER" | sed 's/.* //')"
+    Y_HEIGHT=$(( $S_DISP_HEIGHT - ($Y_MIN + $Y_MAX)))
+    ACTIVE_WINDOW="$(xdotool getactivewindow)"
+    list_windows | parallel xdotool_xprop_getwindowgeometry {} | windows_in_column "$(xdotool getactivewindow)" $Y_MIN $Y_HEIGHT | parallel window_move "3 $DISP_GEOM {}"
+    xdotool windowactivate "$ACTIVE_WINDOW"
+fi
+
+
+function win_in_dir() {
+    local DIR="$1"
+    export -f details_value
+    export -f window_visible
+    export -f window_move
+    export -f xprop_details
+    export -f xdotool_xprop_getwindowgeometry
+    export -f xdotool_getwindowgeometry_to_details
+    DISP_GEOM="$(xdotool_getdisplaygeometry)"
+    S_DISP_HEIGHT="$(echo "$DISP_GEOM" | sed 's/.* //')"
+    Y_MIN="$(echo "$Y_DIRECTION_BUFFER" | sed 's/ .*//')"
+    Y_MAX="$(echo "$Y_DIRECTION_BUFFER" | sed 's/.* //')"
+    Y_HEIGHT=$(( $S_DISP_HEIGHT - ($Y_MIN + $Y_MAX)))
+    ACTIVE_WINDOW="$(xdotool getactivewindow)"
+    WINDOWS="$( list_windows | parallel xdotool_xprop_getwindowgeometry {} )"
+    COL_WINS="$( echo "$WINDOWS" | windows_in_column "$ACTIVE_WINDOW" $Y_MIN $Y_HEIGHT)"
+    if [ "$DIR" == 'j' ] || [ "$DIR" == 'k' ]; then
+        VERT="$(printf "%s" "$COL_WINS" | awk -v ACTIVE="$ACTIVE_WINDOW" 'BEGIN { PREV="_"; NEXT="_"; WAS=0 }
+            $1 == ACTIVE { WAS = 1; next }
+            WAS == 0 { PREV=$0 }
+            WAS == 1 {
+                NEXT = $0
+                WAS = 2
+            }
+            END { print PREV "/" NEXT }
+            ')"
+        if [ "$DIR" == "j" ]; then
+            echo "$VERT" | sed 's^.*/^^'
+            return
+        fi
+        echo "$VERT" | sed 's^/.*^^'
+        return
+    else
+        ACT_MID="$(printf "%s" "$WINDOWS" | awk -v W="$ACTIVE_WINDOW" 'W==$1 { print int($2 + ($4 / 2)), int($3 + ($5 / 2)) }')"
+        ACT_MID_X="$( echo "$ACT_MID" | sed 's/ .*//')"
+        ACT_MID_Y="$( echo "$ACT_MID" | sed 's/.* //')"
+        TARGET_WINDOW="$(
+            printf "%s\n%s" "$(echo "$COL_WINS" | sed 's/^/ACTCOL /')" "$WINDOWS" \ |
+                awk -v DIR="$DIR" -v ACT_MID_X="$ACT_MID_X" -v ACT_MID_Y="$ACT_MID_Y" 'BEGIN {ARLEN=0; DST=999999; WIN=""}
+
+                    function abs(v) {return v < 0 ? -v : v}
+
+                    # Keep a note of items in current column
+                    $1 == "ACTCOL" { AR[ARLEN++] = $2; next }
+
+                    # Remove items in current column
+                    {
+                        for (i=0; i<ARLEN; i++) {
+                            if (AR[i] == $1) {
+                                next
+                            }
+                        }
+                    }
+
+                    # Remove windows that are in the wrong direction
+                    DIR=="h" && ($2 + $4) > ACT_MID_X { next }
+                    DIR=="l" && $2 < ACT_MID_X { next }
+
+                    {
+                        CUR_MID_X = int($2 + ($4 / 2));
+                        CUR_MID_Y = int($3 + ($5 / 2));
+                        X_DIST = abs(ACT_MID_X - CUR_MID_X);
+                        Y_DIST = abs(ACT_MID_Y - CUR_MID_Y);
+                        CUR_DIST = sqrt((X_DIST * X_DIST) + (Y_DIST * Y_DIST));
+                        # print "WIN: ", $1
+                        if (CUR_DIST < DST) {
+                            # print "CUR_MID_X=", CUR_MID_X;
+                            # print "CUR_MID_Y=", CUR_MID_Y;
+                            # print "ACT_MID_X=", ACT_MID_X;
+                            # print "ACT_MID_Y=", ACT_MID_Y;
+                            # print "CUR_DIST=", CUR_DIST;
+                            DST = CUR_DIST;
+                            WIN = $0
+                        }
+                    }
+
+                    END {
+                        if (WIN != "") {
+                            print WIN
+                        }
+                    }
+                    '
+            )"
+        if [ ! -z "$TARGET_WINDOW" ]; then
+            printf "%s\n" "$TARGET_WINDOW"
+        fi
+    fi
+}
+
+if [ ! -z "$DIR" ]; then
+    TARGET_WINDOW="$( win_in_dir "$DIR" )"
+    echo "$TARGET_WINDOW"
+    xdotool windowactivate "$(echo "$TARGET_WINDOW" | sed 's/ .*//')"
+fi
+
+
+if [ ! -z "$SWAP" ]; then
+    export -f window_visible
+    export -f window_move
+    export -f details_value
+    export -f xprop_details
+    DISP_GEOM="$(xdotool_getdisplaygeometry)"
+    ACTIVE_WIN="$(xdotool_xprop_getwindowgeometry "$(xdotool getactivewindow)")"
+    TARGET_WINDOW="$( win_in_dir "$SWAP" )"
+    MOVES="$(
+        printf "%s\n%s\n" "$ACTIVE_WIN" "$TARGET_WINDOW" | \
+            awk '
+                BEGIN { FIRST_ID=""; SECOND_ID=""; FIRST=""; SECOND=""; }
+                FIRST_ID != "" { SECOND_ID = $1; SECOND = $2 " " $3 " " $4 " " $5 }
+                FIRST == "" { FIRST_ID = $1; FIRST = $2 " " $3 " " $4 " " $5 }
+                END {
+                    print SECOND_ID, FIRST
+                    print FIRST_ID, SECOND
+                }
+                ' | \
+            sed 's/^//'
+        )"
+
+    printf "%s\n" "$MOVES" | sed 's/^/3 '"$DISP_GEOM /" | parallel window_move {}
+fi
+
+
+if [ ! -z "$MOVE" ]; then
+    XX="$(echo "$MOVE" | awk -F 'x' '{ print $1 }')"
+    YY="$(echo "$MOVE" | awk -F 'x' '{ print $2 }')"
+    WW="$(echo "$MOVE" | awk -F 'x' '{ print $3 }')"
+    HH="$(echo "$MOVE" | awk -F 'x' '{ print $4 }')"
+fi
+
+
+if [ ! -z "$REPORT" ]; then
+    WIN="$(xdotool getactivewindow)"
+    xdotool_xprop_getwindowgeometry "$WIN"
+fi
+
+
+if [ ! -z "$GAP" ]; then
+    export -f details_value
+    export -f window_visible
+    export -f window_move
+    export -f xprop_details
+    export -f xdotool_xprop_getwindowgeometry
+    export -f xdotool_getwindowgeometry_to_details
+    DISP_GEOM="$(xdotool_getdisplaygeometry)"
+    S_DISP_HEIGHT="$(echo "$DISP_GEOM" | sed 's/.* //')"
+    Y_MIN="$(echo "$Y_DIRECTION_BUFFER" | sed 's/ .*//')"
+    Y_MAX="$(echo "$Y_DIRECTION_BUFFER" | sed 's/.* //')"
+    Y_HEIGHT=$(( $S_DISP_HEIGHT - ($Y_MIN + $Y_MAX)))
+    ACTIVE_WINDOW="$(xdotool getactivewindow)"
+    WINDOWS="$( list_windows | parallel xdotool_xprop_getwindowgeometry {} )"
+    COL_WINS="$( echo "$WINDOWS" | windows_in_column "$ACTIVE_WINDOW" $Y_MIN $Y_HEIGHT)"
+
+    COL_LEFT_RIGHT="$(printf "%s\n" "$COL_WINS" | head -n1 | awk '
+        BEGIN { WR = 1; WL = 999999 }
+        { if ($2 + $4 > WR) { WR = $2 + $4 } if (WL > $2) { WL = $2 } }
+        END { print WL, WR }')"
+
+    COL_LEFT="$(echo "$COL_LEFT_RIGHT" | sed 's/ .*//')"
+    COL_RIGHT="$(echo "$COL_LEFT_RIGHT" | sed 's/.* //')"
+
+    GAP_LEFT_RIGHT="$(printf "%s\n" "$WINDOWS" | awk -v COL_LEFT="$COL_LEFT" -v COL_RIGHT="$COL_RIGHT" '
+        BEGIN { MOST_LEFT=0; MOST_RIGHT=999999 }
+        (($2 + $4 > MOST_LEFT) && ($2 + $4 < COL_LEFT)) {
+                MOST_LEFT = $2 + $4
+        }
+        (($2 < MOST_RIGHT) && ($2 > COL_RIGHT)) {
+                MOST_RIGHT = $2
+        }
+        END { print COL_LEFT - MOST_LEFT, MOST_RIGHT - COL_RIGHT }')"
+
+    GAP_LEFT="$(echo "$GAP_LEFT_RIGHT" | sed 's/ .*//')"
+    GAP_RIGHT="$(echo "$GAP_LEFT_RIGHT" | sed 's/.* //')"
+
+    MOVES="$(
+        printf "%s\n" "$WINDOWS" | awk -v GAP_LEFT="$GAP_LEFT" -v GAP_RIGHT="$GAP_RIGHT" -v COL_LEFT="$COL_LEFT" -v COL_RIGHT="$COL_RIGHT" '
+            $2 + $4 < COL_LEFT {
+                print $1, ($2 + GAP_LEFT) - 1, $3, $4, $5
+            }
+            $2 > COL_RIGHT {
+                print $1, ($2 - GAP_RIGHT) + 1, $3, $4, $5
+            }'
+        )"
+
+    printf "%s\n" "$MOVES" | sed 's/^/1 '"$DISP_GEOM /" | parallel window_move {}
+
+
+    #window_move "1 $GEOM_X $GEOM_Y $WINDOW_ID $CUR_X $CUR_Y $CUR_W $CUR_H"
+    xdotool windowactivate "$ACTIVE_WINDOW"
 fi

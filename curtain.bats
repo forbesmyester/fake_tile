@@ -61,3 +61,35 @@
     expected="211 213 1763 1777"
     [[ "${result}" == "$expected" ]]
 }
+
+
+@test "xprop_details" {
+    XVAL='_NET_WM_ICON_GEOMETRY(CARDINAL) = 333, 0, 200, 26
+_NET_FRAME_EXTENTS(CARDINAL) = 5, 5, 29, 5
+WM_STATE(WM_STATE):
+		window state: Normal
+		icon window: 0x94d8be00
+_NET_WM_DESKTOP(CARDINAL) = 8
+_NET_WM_STATE(ATOM) = _NET_WM_STATE_FOCUSED
+WM_LOCALE_NAME(STRING) = "en_GB.UTF-8"'
+    result="$(printf "%s" "$XVAL" | ./curtain -t xprop_details)"
+    echo $result
+    expected='_NET_WM_ICON_GEOMETRY=333, 0, 200, 26
+_NET_FRAME_EXTENTS=5, 5, 29, 5
+_NET_WM_DESKTOP=8
+_NET_WM_STATE=_NET_WM_STATE_FOCUSED
+WM_LOCALE_NAME=en_GB.UTF-8'
+    [[ "${result}" == "$expected" ]]
+}
+
+
+@test "windows_in_column" {
+    WINDOWS="$( echo "85 100 450 100 300
+    83 120 110 100 300
+    88 200 0 100 0" | sed 's/^[\t ]\+//')"
+    result="$(printf "%s" "$WINDOWS" | ./curtain -t windows_in_column 83 50 1050)"
+    printf "%s" "$result" > res
+    expected="$(printf "%s\n%s" "85 100 60 120 60" "83 100 73 120 60")"
+    printf "%s" "$expected" > exp
+    [[ "${result}" == "${expected}" ]]
+}
