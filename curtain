@@ -10,6 +10,7 @@ CENTER=""
 COLUMN=""
 DIR=""
 SWAP=""
+WINMOVE=""
 MOVE=""
 GAP=""
 REPORT=""
@@ -27,6 +28,7 @@ show_help() {
     echo "  -o Fix this column"
     echo "  -d [hjkl] Focus in the direction"
     echo "  -w [hjkl] Swap in the direction"
+    echo "  -m [hjkl] Move in the direction"
     echo "  -M"
     echo "  -R"
     echo "  -h    Get (this) help"
@@ -35,7 +37,7 @@ show_help() {
 }
 
 
-while getopts "hgd:M:Rct:s:ow:" opt; do
+while getopts "hgm:d:M:Rct:s:ow:" opt; do
     case "$opt" in
         h)
             show_help
@@ -62,8 +64,11 @@ while getopts "hgd:M:Rct:s:ow:" opt; do
         w)
             SWAP="$OPTARG"
             ;;
-        M)
+        m)
             MOVE="$OPTARG"
+            ;;
+        M)
+            WINMOVE="$OPTARG"
             ;;
         R)
             REPORT="1"
@@ -351,7 +356,6 @@ function pixelshift() {
 
 
 function window_move() {
-    # echo "MOVE: $1"
     local SPLIT=( $@ )
     local MODE=${SPLIT[0]}
     local GEOM_X=${SPLIT[1]}
@@ -361,7 +365,7 @@ function window_move() {
     local Y=${SPLIT[5]}
     local W=${SPLIT[6]}
     local H=${SPLIT[7]}
-    # echo "> $MODE $GEOM_X $GEOM_Y $WINDOW_ID $X $Y $W $H"
+    echo "> $MODE $GEOM_X $GEOM_Y $WINDOW_ID $X $Y $W $H"
 
     local XPROPS="$(xprop -id $WINDOW_ID | xprop_details)"
     local XPROPS_FRAME="$(echo "$XPROPS" | details_value _NET_FRAME_EXTENTS | awk -F [=,] ' { print gensub(/.*([0-9]+), *([0-9]+), *([0-9]+), *([0-9]+).*/, "\\1 \\2 \\3 \\4", "g", $0) }')"
@@ -370,7 +374,7 @@ function window_move() {
     # echo "XPROPS_FRAME: $XPROPS_FRAME"
     local FRAME_LRTB=( $XPROPS_FRAME )
     X=$(( ${X} + ${FRAME_LRTB[0]} ))
-    Y=$(( ${Y} + ${FRAME_LRTB[2]} ))
+    # Y=$(( ${Y} + ${FRAME_LRTB[2]} ))
     W=$(( ${W} - (${FRAME_LRTB[0]} + ${FRAME_LRTB[1]}) ))
     H=$(( ${H} - (${FRAME_LRTB[2]} + ${FRAME_LRTB[3]}) ))
     local XPROPS_COMPSITOR="$(echo "$XPROPS" | details_value _NET_WM_BYPASS_COMPOSITOR)"
@@ -567,10 +571,40 @@ fi
 
 
 if [ ! -z "$MOVE" ]; then
-    XX="$(echo "$MOVE" | awk -F 'x' '{ print $1 }')"
-    YY="$(echo "$MOVE" | awk -F 'x' '{ print $2 }')"
-    WW="$(echo "$MOVE" | awk -F 'x' '{ print $3 }')"
-    HH="$(echo "$MOVE" | awk -F 'x' '{ print $4 }')"
+
+    if [ "$MOVE" == "j" ] || [ "$MOVE" == "k" ]; then
+        "$0" -w "$MOVE"
+    fi
+
+    export -f details_value
+    export -f window_visible
+    export -f window_move
+    export -f xprop_details
+    export -f xdotool_xprop_getwindowgeometry
+    export -f xdotool_getwindowgeometry_to_details
+
+    DISP_GEOM="$(xdotool_getdisplaygeometry)"
+    S_DISP_HEIGHT="$(echo "$DISP_GEOM" | sed 's/.* //')"
+    Y_MIN="$(echo "$Y_DIRECTION_BUFFER" | sed 's/ .*//')"
+    Y_MAX="$(echo "$Y_DIRECTION_BUFFER" | sed 's/.* //')"
+    Y_HEIGHT=$(( $S_DISP_HEIGHT - ($Y_MIN + $Y_MAX)))
+
+    ACTIVE_WINDOW="$(xdotool getactivewindow)"
+    WINDOWS="$( list_windows | parallel xdotool_xprop_getwindowgeometry {} )"
+    COL_WINS="$( echo "$WINDOWS" | windows_in_column "$ACTIVE_WINDOW" $Y_MIN $Y_HEIGHT)"
+    echo "$COL_WINS"
+
+fi
+
+
+if [ ! -z "$WINMOVE" ]; then
+    XX="$(echo "$WINMOVE" | awk -F 'x' '{ print $1 }')"
+    YY="$(echo "$WINMOVE" | awk -F 'x' '{ print $2 }')"
+    WW="$(echo "$WINMOVE" | awk -F 'x' '{ print $3 }')"
+    HH="$(echo "$WINMOVE" | awk -F 'x' '{ print $4 }')"
+    DISP_GEOM="$(xdotool_getdisplaygeometry)"
+    PARAM="$(echo "$(xdotool getactivewindow) $XX $YY $WW $HH" | sed 's/^/3 '"$DISP_GEOM /")"
+    window_move "$PARAM"
 fi
 
 
