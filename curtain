@@ -222,6 +222,20 @@ function xdotool_xprop_getwindowgeometry() {
 }
 
 
+# function windows_in_column_slack() {
+#     local CURRENT_COLUMN_WIDTH="$1"
+#     local PERCENT="$2"
+#     local PIXELS="$3"
+#     local PER_VAL=$(( $CURRENT_COLUMN_WIDTH * (PERCENT / 100) ))
+#     local PIX_VAL=$(( $CURRENT_COLUMN_WIDTH - $PIXELS ))
+#     if [[ "$PER_VAL" -gt "$PIX_VAL" ]]; then
+#         echo "$PER_VAL"
+#         return
+#     fi
+#     echo "$PIX_VAL"
+# }
+
+
 function windows_in_column() {
     # export -f xdotool_xprop_getwindowgeometry
     # cat /dev/stdin | parallel xdotool_xprop_getwindowgeometry "$1"
@@ -245,6 +259,15 @@ function windows_in_column() {
         sed 's/[0-9]\+ //' | \
         awk -v CENTER_OR_EDGE=1 -v SELECTED_WIN="$SELECTED_WIN" '
             BEGIN { COL_LEFT="UN"; COL_RIGHT="UN"; LEFT="UN"; ITEMS_INDEX=0  }
+
+            function slack(WIDTH, SLACK_PIXELS, SLACK_PERCENT) {
+                TMP = WIDTH * (SLACK_PERCENT / 100)
+                if (TMP > SLACK_PIXELS) {
+                    return SLACK_PIXELS
+                }
+                return TMP
+            }
+
             # Output column details then windows in column, identified by current selected window (top).
             LEFT=="UN" {
                 LEFT=$2
@@ -266,8 +289,10 @@ function windows_in_column() {
             CENTER_OR_EDGE == 1 {
                 LINE_LEFT=$2
                 LINE_RIGHT=$2+$4
-                if ((LINE_LEFT < LEFT) && (LINE_RIGHT < LEFT)) { next }
-                if ((LINE_LEFT > RIGHT) && (LINE_RIGHT > RIGHT)) { next }
+                INCLUDE_LEFT = LINE_LEFT + slack($4, 16, 16)
+                INCLUDE_RIGHT = LINE_RIGHT - slack($4, 16, 16)
+                if ((INCLUDE_LEFT < LEFT) && (INCLUDE_RIGHT < LEFT)) { next }
+                if ((INCLUDE_LEFT > RIGHT) && (INCLUDE_RIGHT > RIGHT)) { next }
                 ADD = 1
             }
             ADD == 1 {
