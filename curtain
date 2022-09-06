@@ -14,7 +14,7 @@ WINMOVE=""
 MOVE=""
 GAP=""
 REPORT=""
-
+SELECTED_WINDOW_ID=""
 
 show_help() {
     echo "NAME:"
@@ -26,6 +26,7 @@ show_help() {
     echo "  -c Centre the active window"
     echo "  -g Gap fix (around column)"
     echo "  -o Fix this column"
+    echo "  -i Supply a window id when appropriate (-o)"
     echo "  -d [hjkl] Focus in the direction"
     echo "  -w [hjkl] Swap in the direction"
     echo "  -m [hjkl] Move in the direction"
@@ -37,7 +38,7 @@ show_help() {
 }
 
 
-while getopts "hgm:d:M:Rct:s:ow:" opt; do
+while getopts "hgm:d:M:Rct:s:ow:i:" opt; do
     case "$opt" in
         h)
             show_help
@@ -48,6 +49,9 @@ while getopts "hgm:d:M:Rct:s:ow:" opt; do
             ;;
         s)
             PIXELSHIFT="$OPTARG"
+            ;;
+        i)
+            SELECTED_WINDOW_ID="$OPTARG"
             ;;
         c)
             CENTER="1"
@@ -404,18 +408,19 @@ function window_move() {
     H=$(( ${H} - (${FRAME_LRTB[2]} + ${FRAME_LRTB[3]}) ))
     local XPROPS_COMPSITOR="$(echo "$XPROPS" | details_value _NET_WM_BYPASS_COMPOSITOR)"
     if [ "$XPROPS_COMPSITOR" == "2" ]; then
-        X=$(( $X - ${FRAME_LRTB[0]} ))
-        Y=$(( $Y - ${FRAME_LRTB[2]} ))
+        # X=$(( $X - ${FRAME_LRTB[0]} ))
+        # Y=$(( $Y - ${FRAME_LRTB[2]} ))
+        printf "%s" ""
     fi
     if window_visible "$GEOM_X" "$GEOM_Y" "$X" "$Y" "$W" "$H"; then
-        if [ "$MODE" -eq 1 ] || [ "$MODE" -eq 3 ]; then
-            xdotool windowmove "$WINDOW_ID" "$X" "$Y"
-        fi
         if [ "$MODE" -eq 2 ] || [ "$MODE" -eq 3 ]; then
             xdotool windowsize "$WINDOW_ID" "$W" "$H"
         fi
+        if [ "$MODE" -eq 1 ] || [ "$MODE" -eq 3 ]; then
+            xdotool windowmove "$WINDOW_ID" "$X" "$Y"
+        fi
         xprop -id "$WINDOW_ID" -f _CURTAIN_XYWH 8s -set _CURTAIN_XYWH ""
-        xdotool windowactivate "$WINDOW_ID"
+        # xdotool windowactivate "$WINDOW_ID"
     else
         xdotool windowminimize "$WINDOW_ID"
         # TODO: Do setting respect mode perhaps
@@ -433,24 +438,7 @@ fi
 
 if [ ! -z "$PIXELSHIFT" ]; then
     shift 1
-    ACTIVE_WINDOW="$(xdotool getactivewindow)"
-    pixelshift "$1" "$2"
-    xdotool windowactivate "$ACTIVE_WINDOW"
-fi
-
-
-if [ ! -z "$CENTER" ]; then
-    shift 1
-    echo "HERE"
-    xdotool_xprop_getwindowgeometry "$(xdotool getactivewindow)"
-    S_WIN_GEOM="$(xdotool_xprop_getwindowgeometry "$(xdotool getactivewindow)")"
-    echo "> $S_WIN_GEOM"
-    S_DISP_GEOM="$(xdotool_getdisplaygeometry)"
-    WIN_GEOM=( $S_WIN_GEOM )
-    DISP_GEOM=( $S_DISP_GEOM )
-    XSHIFT=$(( (${DISP_GEOM[0]} / 2) - (${WIN_GEOM[1]} + (${WIN_GEOM[3]} / 2))  ))
-    ACTIVE_WINDOW="$(xdotool getactivewindow)"
-    pixelshift "$XSHIFT" 0
+    pixelshift "$PIXELSHIFT" 0
     xdotool windowactivate "$ACTIVE_WINDOW"
 fi
 
@@ -462,14 +450,18 @@ if [ ! -z "$COLUMN" ]; then
     export -f xprop_details
     export -f xdotool_xprop_getwindowgeometry
     export -f xdotool_getwindowgeometry_to_details
+    ACTIVE_WINDOW="$(xdotool getactivewindow)"
+    WINDOW_ID="$(xdotool getactivewindow)"
     DISP_GEOM="$(xdotool_getdisplaygeometry)"
     S_DISP_HEIGHT="$(echo "$DISP_GEOM" | sed 's/.* //')"
     Y_MIN="$(echo "$Y_DIRECTION_BUFFER" | sed 's/ .*//')"
     Y_MAX="$(echo "$Y_DIRECTION_BUFFER" | sed 's/.* //')"
     Y_HEIGHT=$(( $S_DISP_HEIGHT - ($Y_MIN + $Y_MAX)))
-    ACTIVE_WINDOW="$(xdotool getactivewindow)"
-    list_windows | parallel xdotool_xprop_getwindowgeometry {} | windows_in_column "$(xdotool getactivewindow)" $Y_MIN $Y_HEIGHT | parallel window_move "3 $DISP_GEOM {}"
-    xdotool windowactivate "$ACTIVE_WINDOW"
+    if [ ! -z "$SELECTED_WINDOW_ID" ]; then
+        WINDOW_ID="$SELECTED_WINDOW_ID"
+    fi
+    list_windows | parallel xdotool_xprop_getwindowgeometry {} | windows_in_column "$WINDOW_ID" $Y_MIN $Y_HEIGHT | parallel window_move "3 $DISP_GEOM {}"
+    # xdotool windowactivate "$ACTIVE_WINDOW"
 fi
 
 
@@ -563,9 +555,16 @@ function win_in_dir() {
 }
 
 if [ ! -z "$DIR" ]; then
+    DISP_GEOM="$(xdotool_getdisplaygeometry)"
+    S_DISP_WIDTH="$(echo "$DISP_GEOM" | sed 's/ .*//')"
     TARGET_WINDOW="$( win_in_dir "$DIR" )"
-    echo "$TARGET_WINDOW"
+    SHIFT="$( echo "$DISP_GEOM $TARGET_WINDOW" | awk '
+        $4 < 0 { print 0 - $4; next }
+        ($4 + $6) > $1 { print "-" ($4 + $6) - $1 }
+        ' )"
     xdotool windowactivate "$(echo "$TARGET_WINDOW" | sed 's/ .*//')"
+    echo "S $SHIFT"
+    $0 -s "$SHIFT"
 fi
 
 
@@ -617,7 +616,34 @@ if [ ! -z "$MOVE" ]; then
     ACTIVE_WINDOW="$(xdotool getactivewindow)"
     WINDOWS="$( list_windows | parallel xdotool_xprop_getwindowgeometry {} )"
     COL_WINS="$( echo "$WINDOWS" | windows_in_column "$ACTIVE_WINDOW" $Y_MIN $Y_HEIGHT)"
-    echo "$COL_WINS"
+    WIN_IN_COL_COUNT="$(echo "$COL_WINS" | wc -l)"
+
+    if [ "$WIN_IN_COL_COUNT" -gt 1 ]; then
+        MOVE_X_FROM="$( echo "$COL_WINS" | awk '{ print $2 }' | tail -n 1 )"
+        MOVE_DISTANCE="$( echo "$COL_WINS" | head -n 1 | awk '{ print $4 }' )"
+        echo $MOVE_DISTANCE
+
+        NEGATE=""
+        if [ "$MOVE" == "l" ]; then
+            NEGATE="-"
+        fi
+        MOVE_WINDOWS="$(
+            echo "$WINDOWS" | \
+            awk -v MOVE_X_FROM="$MOVE_X_FROM" \
+                -v MOVE_DISTANCE="${NEGATE}$MOVE_DISTANCE" \
+                -v ACTIVE_WINDOW="$ACTIVE_WINDOW" \
+                '
+                    $1 == ACTIVE_WINDOW { next }
+                    ($2 >= MOVE_X_FROM) && (MOVE_DISTANCE > 0) { print $1, $2 + MOVE_DISTANCE, $3, $4, $5 }
+                    ($2 <= MOVE_X_FROM) && (MOVE_DISTANCE < 0) { print $1, $2 + MOVE_DISTANCE, $3, $4, $5 }
+                ' | \
+            sed 's/^/3 '"$DISP_GEOM /"
+            )"
+        printf "%s" "$MOVE_WINDOWS" | parallel window_move {}
+        MOVED_FROM_WINDOW_ID="$( echo "$COL_WINS" | awk -v ACTIVE_WINDOW="$ACTIVE_WINDOW" '$1 != ACTIVE_WINDOW { print $1 }' )"
+        printf "%s\n%s\n"  "$MOVED_FROM_WINDOW_ID" "$ACTIVE_WINDOW"| parallel -j 1 $0 -o -i {}
+        exit
+    fi
 
 fi
 
