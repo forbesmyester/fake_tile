@@ -437,11 +437,27 @@ fi
 
 
 if [ ! -z "$PIXELSHIFT" ]; then
+    ACTIVE_WINDOW="$(xdotool getactivewindow)"
     shift 1
     pixelshift "$PIXELSHIFT" 0
     xdotool windowactivate "$ACTIVE_WINDOW"
 fi
 
+
+if [ ! -z "$CENTER" ]; then
+    shift 1
+    echo "HERE"
+    xdotool_xprop_getwindowgeometry "$(xdotool getactivewindow)"
+    S_WIN_GEOM="$(xdotool_xprop_getwindowgeometry "$(xdotool getactivewindow)")"
+    echo "> $S_WIN_GEOM"
+    S_DISP_GEOM="$(xdotool_getdisplaygeometry)"
+    WIN_GEOM=( $S_WIN_GEOM )
+    DISP_GEOM=( $S_DISP_GEOM )
+    XSHIFT=$(( (${DISP_GEOM[0]} / 2) - (${WIN_GEOM[1]} + (${WIN_GEOM[3]} / 2))  ))
+    ACTIVE_WINDOW="$(xdotool getactivewindow)"
+    pixelshift "$XSHIFT" 0
+    xdotool windowactivate "$ACTIVE_WINDOW"
+fi
 
 if [ ! -z "$COLUMN" ]; then
     export -f details_value
@@ -598,6 +614,7 @@ if [ ! -z "$MOVE" ]; then
 
     if [ "$MOVE" == "j" ] || [ "$MOVE" == "k" ]; then
         "$0" -w "$MOVE"
+        exit
     fi
 
     export -f details_value
@@ -643,6 +660,45 @@ if [ ! -z "$MOVE" ]; then
         MOVED_FROM_WINDOW_ID="$( echo "$COL_WINS" | awk -v ACTIVE_WINDOW="$ACTIVE_WINDOW" '$1 != ACTIVE_WINDOW { print $1 }' )"
         printf "%s\n%s\n"  "$MOVED_FROM_WINDOW_ID" "$ACTIVE_WINDOW"| parallel -j 1 $0 -o -i {}
         exit
+    else
+        TARGET_WINDOW="$( win_in_dir "$MOVE" )"
+        echo "$TARGET_WINDOW"
+        echo $ACTIVE_WINDOW
+        MOVE_TO_COL_WINS="$( echo "$WINDOWS" | windows_in_column "$(echo "$TARGET_WINDOW" | sed 's/ .*//')" $Y_MIN $Y_HEIGHT)"
+        echo "$MOVE_TO_COL_WINS"
+        MOVE_TO_COL_COUNT="$( echo "$MOVE_TO_COL_WINS" | wc -l )"
+        echo $MOVE_TO_COL_COUNT
+        echo $Y_HEIGHT
+        echo "="
+        OLD_WINDOW_MOVE="$(
+            printf "%s" "$MOVE_TO_COL_WINS" | awk \
+                -v WINDOW_COUNT="$MOVE_TO_COL_COUNT" \
+                -v DISP_GEOM="$DISP_GEOM" '
+                    BEGIN { MULT = WINDOW_COUNT / (WINDOW_COUNT + 1) }
+                    {
+                        # print $0
+                        print 3, DISP_GEOM, $1, $2, int($3 * MULT), $4, int($5 * MULT)
+                    }
+                ' )"
+        OLD_WINDOW_MOVE_NEW_Y="$(
+            printf "%s" "$OLD_WINDOW_MOVE" | awk '
+                BEGIN { Y=0; H=0 }
+                $6 > Y { Y = $6; H = $8 }
+                END { print Y + H + 1 }' )"
+        OLD_WINDOW_MOVE_NEW_H=$(( $Y_HEIGHT - $OLD_WINDOW_MOVE_NEW_Y ))
+        CURRENT_WINDOW_NEW_POSITION="$(
+            echo "$OLD_WINDOW_MOVE" | \
+                head -n 1 | \
+                awk -v ACTIVE_WINDOW="$ACTIVE_WINDOW" \
+                    -v Y="$OLD_WINDOW_MOVE_NEW_Y" \
+                    -v H="$OLD_WINDOW_MOVE_NEW_H" '
+                        { print $1, $2, $3, ACTIVE_WINDOW, $5, Y, $7, H }'
+            )"
+        printf "%s\n%s\n" "$OLD_WINDOW_MOVE" "$CURRENT_WINDOW_NEW_POSITION" | parallel window_move {}
+
+        # 52428802 1169 0 1466 1541
+        # 138412039 1169 1541 1466 616
+
     fi
 
 fi
