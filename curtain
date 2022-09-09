@@ -419,6 +419,10 @@ function window_move() {
         if [ "$MODE" -eq 1 ] || [ "$MODE" -eq 3 ]; then
             xdotool windowmove "$WINDOW_ID" "$X" "$Y"
         fi
+        local WINDOW_IS_MINIMIZED="$(echo "$XPROPS" | details_value _NET_WM_STATE | awk 'BEGIN { m=0 } $0 ~ /_NET_WM_STATE_HIDDEN/ { m=1 } END { print m }' )"
+        if [ "$WINDOW_IS_MINIMIZED" -gt 0 ]; then
+            xdotool windowactivate "$WINDOW_ID"
+        fi
         xprop -id "$WINDOW_ID" -f _CURTAIN_XYWH 8s -set _CURTAIN_XYWH ""
         # xdotool windowactivate "$WINDOW_ID"
     else
@@ -574,13 +578,17 @@ if [ ! -z "$DIR" ]; then
     DISP_GEOM="$(xdotool_getdisplaygeometry)"
     S_DISP_WIDTH="$(echo "$DISP_GEOM" | sed 's/ .*//')"
     TARGET_WINDOW="$( win_in_dir "$DIR" )"
+    LEFT="$( echo "$TARGET_WINDOW" | awk '{ print $2 }' )"
     SHIFT="$( echo "$DISP_GEOM $TARGET_WINDOW" | awk '
         $4 < 0 { print 0 - $4; next }
         ($4 + $6) > $1 { print "-" ($4 + $6) - $1 }
         ' )"
-    xdotool windowactivate "$(echo "$TARGET_WINDOW" | sed 's/ .*//')"
-    echo "S $SHIFT"
-    $0 -s "$SHIFT"
+    if [ "$SHIFT" != "0" ]; then
+        $0 -s "$SHIFT"
+    fi
+    if [ ! -z "$TARGET_WINDOW" ]; then
+        xdotool windowactivate "$(echo "$TARGET_WINDOW" | sed 's/ .*//')"
+    fi
 fi
 
 
