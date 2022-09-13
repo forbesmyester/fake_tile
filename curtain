@@ -2,9 +2,9 @@
 set -euo pipefail
 IFS=$' \n\t'
 
-export MIN_WINDOW_HEIGHT=256
-export X_DIRECTION_GEOM_SLACK=256
-export Y_DIRECTION_BUFFER="0 2"
+export MIN_WINDOW_HEIGHT=128
+export X_DIRECTION_GEOM_SLACK=64
+export Y_DIRECTION_BUFFER="2 0"
 ACTION_TEST=""
 PIXELSHIFT=""
 CENTER=""
@@ -406,6 +406,40 @@ function pixelshift() {
 }
 
 
+function window_move_calc() {
+    local SETTINGS="$1"
+    local COMPOSITOR="$2"
+    local POSITION="$3"
+    local WINDOW_DETAILS="$4"
+    local FRAME_DETAILS="$5"
+
+    local SETTING=""
+    local USETTING=""
+    local FRDET=""
+
+    local V="$(printf "%s" "$WINDOW_DETAILS" | details_value "$POSITION")"
+    local SETTING_GETTER="$POSITION"
+    if [ "$COMPOSITOR" -gt 0 ]; then
+        SETTING_GETTER="${SETTING_GETTER}C"
+    fi
+    SETTINGS="$(printf "%s" "$SETTINGS" | details_value "$SETTING_GETTER")"
+    while [ ! -z "$SETTINGS" ]; do
+        SETTING=${SETTINGS:0:1}
+        USETTING=${SETTING^}
+        SETTINGS=${SETTINGS:1}
+        FRDET="$(printf "%s" "$FRAME_DETAILS" | details_value "$USETTING")"
+        # echo "FRAME_DETAILS=$FRAME_DETAILS V=$V FD=$FD USETTING="$USETTING""
+        if [[ "$SETTING" == "$USETTING" ]]; then
+            V=$(( $V + $FRDET ))
+        else
+            V=$(( $V - $FRDET ))
+        fi
+    done
+
+    echo "$V"
+}
+
+
 function window_move() {
     local SPLIT=( $@ )
     local MODE=${SPLIT[0]}
@@ -417,6 +451,7 @@ function window_move() {
     local W=${SPLIT[6]}
     local H=${SPLIT[7]}
 
+    # echo ">" $WINDOW_ID $MODE $X $Y $W $H
     VISIBLE="$(window_visible "$GEOM_X" "$GEOM_Y" "$X" "$Y" "$W" "$H")"
 
     local XPROPS="$(xprop -id $WINDOW_ID | xprop_details)"
@@ -425,16 +460,32 @@ function window_move() {
     # echo "XPROPS: $XPROPS"
     # echo "XPROPS_FRAME: $XPROPS_FRAME"
     local FRAME_LRTB=( $XPROPS_FRAME )
-    X=$(( ${X} + ${FRAME_LRTB[0]} ))
-    Y=$(( ${Y} + ${FRAME_LRTB[2]} ))
-    W=$(( ${W} - (${FRAME_LRTB[0]} + ${FRAME_LRTB[1]}) ))
-    H=$(( ${H} - (${FRAME_LRTB[2]} + ${FRAME_LRTB[3]}) ))
+    FRAME_OFFSET_SETTINGS="$(echo 'X=;Y=;W=lr;H=tb;XC=;YC=;WC=lr;HC=tb' | sed 's/;/\n/g')"
+    FRAME_OFFSET_SETTINGS="$(echo 'X=;Y=;W=lr;H=tb;XC=;YC=;WC=lr;HC=tb' | sed 's/;/\n/g')"
+    WINDOW_DETAILS="$( echo "X=$X;Y=$Y;W=$W;H=$H" | sed 's/;/\n/g')"
+    FRAME_DETAILS="$( echo "L=${FRAME_LRTB[0]};R=${FRAME_LRTB[1]};T=${FRAME_LRTB[2]};B=${FRAME_LRTB[3]}" | sed 's/;/\n/g')"
+    local IS_UNDER_COMPOSITOR=0
     local XPROPS_COMPSITOR="$(echo "$XPROPS" | details_value _NET_WM_BYPASS_COMPOSITOR)"
     if [ "$XPROPS_COMPSITOR" == "2" ]; then
-        X=$(( $X - ${FRAME_LRTB[0]} ))
-        Y=$(( $Y - ${FRAME_LRTB[2]} ))
-        printf "%s" ""
+        IS_UNDER_COMPOSITOR=1
     fi
+    X="$(window_move_calc "$FRAME_OFFSET_SETTINGS" "$IS_UNDER_COMPOSITOR" "X" "$WINDOW_DETAILS" "$FRAME_DETAILS"  )"
+    Y="$(window_move_calc "$FRAME_OFFSET_SETTINGS" "$IS_UNDER_COMPOSITOR" "Y" "$WINDOW_DETAILS" "$FRAME_DETAILS"  )"
+    W="$(window_move_calc "$FRAME_OFFSET_SETTINGS" "$IS_UNDER_COMPOSITOR" "W" "$WINDOW_DETAILS" "$FRAME_DETAILS"  )"
+    H="$(window_move_calc "$FRAME_OFFSET_SETTINGS" "$IS_UNDER_COMPOSITOR" "H" "$WINDOW_DETAILS" "$FRAME_DETAILS"  )"
+
+    # echo "> X=$X;Y=$Y;W=$W;H=$H" >> /tmp/curtain
+    # echo ">>" $WINDOW_ID $MODE $X $Y $W $H
+
+    # X=$(( ${X} + ${FRAME_LRTB[0]} ))
+    # Y=$(( ${Y} + ${FRAME_LRTB[2]} ))
+    # W=$(( ${W} - (${FRAME_LRTB[0]} + ${FRAME_LRTB[1]}) ))
+    # H=$(( ${H} - (${FRAME_LRTB[2]} + ${FRAME_LRTB[3]}) ))
+    # if [ "$XPROPS_COMPSITOR" == "2" ]; then
+    #     X=$(( $X - ${FRAME_LRTB[0]} ))
+    #     Y=$(( $Y - ${FRAME_LRTB[2]} ))
+    #     printf "%s" ""
+    # fi
     if [ "$VISIBLE" -gt 0 ]; then
         if [ "$MODE" -eq 2 ] || [ "$MODE" -eq 3 ]; then
             xdotool windowsize "$WINDOW_ID" "$W" "$H"
@@ -490,6 +541,7 @@ fi
 
 
 if [ ! -z "$CENTER" ]; then
+    export -f window_move_calc
     S_DISP_GEOM="$(xdotool_getdisplaygeometry)"
     ACTIVE_WINDOW_ID="$(xdotool getactivewindow)"
     S_WIN_GEOM="$(xdotool_xprop_getwindowgeometry "$ACTIVE_WINDOW_ID")"
@@ -514,6 +566,7 @@ if [ ! -z "$COLUMN" ]; then
     export -f window_visible
     export -f window_move
     export -f xprop_details
+    export -f window_move_calc
     export -f xdotool_xprop_getwindowgeometry
     export -f xdotool_getwindowgeometry_to_details
     ACTIVE_WINDOW="$(xdotool getactivewindow)"
@@ -766,7 +819,11 @@ if [ ! -z "$WINMOVE" ]; then
     WW="$(echo "$WINMOVE" | awk -F 'x' '{ print $3 }')"
     HH="$(echo "$WINMOVE" | awk -F 'x' '{ print $4 }')"
     DISP_GEOM="$(xdotool_getdisplaygeometry)"
-    PARAM="$(echo "$(xdotool getactivewindow) $XX $YY $WW $HH" | sed 's/^/3 '"$DISP_GEOM /")"
+    WINDOW_ID="$(xdotool getactivewindow)"
+    if [ ! -z "$SELECTED_WINDOW_ID" ]; then
+        WINDOW_ID="$SELECTED_WINDOW_ID"
+    fi
+    PARAM="$(echo "$WINDOW_ID $XX $YY $WW $HH" | sed 's/^/3 '"$DISP_GEOM /")"
     window_move "$PARAM"
 fi
 
