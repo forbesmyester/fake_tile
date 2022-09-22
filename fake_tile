@@ -6,7 +6,12 @@ IFS=$'\n\t'
 function positions() {
     # TODO: Deal with sticky windows, which are currently not visible as they have a desktop of -1
     local DESKTOP=$1
-    wmctrl -l -G | awk -v DESKTOP="$DESKTOP" '$2 == DESKTOP { print strtonum($1), "L:" $3, "T:" $4, "W:" $5, "H:" $6, "R:" ($3+$5), "B:" ($4+$6), "M:" int($3+($5/2)), "N:" int($4+($6/2)) }'
+    # wmctrl -l -G | awk -v DESKTOP="$DESKTOP" '$2 == DESKTOP { print strtonum($1), "L:" $3, "T:" $4, "W:" $5, "H:" $6, "R:" ($3+$5), "B:" ($4+$6), "M:" int($3+($5/2)), "N:" int($4+($6/2)) }'
+    local AWK='
+        $2 == DESKTOP { print strtonum($1), "L:" $3, "T:" $4, "W:" $5, "H:" $6, "R:" ($3+$5), "B:" ($4+$6), "M:" int($3+($5/2)), "N:" int($4+($6/2)) }
+    '
+    wmctrl -l -G | awk -v DESKTOP="$DESKTOP" "$AWK"
+
 }
 
 function left_area() {
