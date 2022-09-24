@@ -513,8 +513,8 @@ function window_activate() {
         $4 < 0 { print 0 - $4; next }
         ($4 + $6) > $1 { print "-" ($4 + $6) - $1 }
         ' )"
-    if [ "$SHIFT" != "0" ]; then
-        $0 -s "$SHIFT"
+    if [ "$SHIFT" != "0" ] && [ "$SHIFT" != "" ]; then
+        pixelshift "$SHIFT" 0
     fi
     if [ ! -z "$TARGET_WINDOW" ]; then
         xdotool windowactivate "$(echo "$TARGET_WINDOW" | sed 's/ .*//')"
