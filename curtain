@@ -447,17 +447,19 @@ function window_move() {
     local Y=${SPLIT[5]}
     local W=${SPLIT[6]}
     local H=${SPLIT[7]}
+    local ORIGINAL_X=${SPLIT[4]}
+    local ORIGINAL_Y=${SPLIT[5]}
+    local ORIGINAL_W=${SPLIT[6]}
+    local ORIGINAL_H=${SPLIT[7]}
 
     VISIBLE="$(window_visible "$GEOM_X" "$GEOM_Y" "$X" "$Y" "$W" "$H")"
 
     local XPROPS="$(xprop -id $WINDOW_ID | xprop_details)"
     local XPROPS_FRAME="$(echo "$XPROPS" | details_value _NET_FRAME_EXTENTS | awk -F [=,] ' { print gensub(/.*([0-9]+), *([0-9]+), *([0-9]+), *([0-9]+).*/, "\\1 \\2 \\3 \\4", "g", $0) }')"
 
-    # echo "XPROPS: $XPROPS"
-    # echo "XPROPS_FRAME: $XPROPS_FRAME"
     local FRAME_LRTB=( $XPROPS_FRAME )
     FRAME_OFFSET_SETTINGS="$(echo 'X=;Y=;W=lr;H=tb;XC=;YC=;WC=lr;HC=tb' | sed 's/;/\n/g')"
-    # FRAME_OFFSET_SETTINGS="$(echo 'X=;Y=;W=lr;H=tb;XC=;YC=;WC=lr;HC=tb' | sed 's/;/\n/g')"
+    FRAME_OFFSET_SETTINGS="$(echo 'X=L;Y=T;W=lr;H=tb;XC=;YC=;WC=lr;HC=tb' | sed 's/;/\n/g')"
     WINDOW_DETAILS="$( echo "X=$X;Y=$Y;W=$W;H=$H" | sed 's/;/\n/g')"
     FRAME_DETAILS="$( echo "L=${FRAME_LRTB[0]};R=${FRAME_LRTB[1]};T=${FRAME_LRTB[2]};B=${FRAME_LRTB[3]}" | sed 's/;/\n/g')"
     local IS_UNDER_COMPOSITOR=0
@@ -470,18 +472,6 @@ function window_move() {
     W="$(window_move_calc "$FRAME_OFFSET_SETTINGS" "$IS_UNDER_COMPOSITOR" "W" "$WINDOW_DETAILS" "$FRAME_DETAILS"  )"
     H="$(window_move_calc "$FRAME_OFFSET_SETTINGS" "$IS_UNDER_COMPOSITOR" "H" "$WINDOW_DETAILS" "$FRAME_DETAILS"  )"
 
-    # echo "> X=$X;Y=$Y;W=$W;H=$H" >> /tmp/curtain
-    # echo ">>" $WINDOW_ID $MODE $X $Y $W $H
-
-    # X=$(( ${X} + ${FRAME_LRTB[0]} ))
-    # Y=$(( ${Y} + ${FRAME_LRTB[2]} ))
-    # W=$(( ${W} - (${FRAME_LRTB[0]} + ${FRAME_LRTB[1]}) ))
-    # H=$(( ${H} - (${FRAME_LRTB[2]} + ${FRAME_LRTB[3]}) ))
-    # if [ "$XPROPS_COMPSITOR" == "2" ]; then
-    #     X=$(( $X - ${FRAME_LRTB[0]} ))
-    #     Y=$(( $Y - ${FRAME_LRTB[2]} ))
-    #     printf "%s" ""
-    # fi
     if [ "$VISIBLE" -gt 0 ]; then
         if [ "$MODE" -eq 2 ] || [ "$MODE" -eq 3 ]; then
             xdotool windowsize "$WINDOW_ID" "$W" "$H"
@@ -498,7 +488,7 @@ function window_move() {
     else
         xdotool windowminimize "$WINDOW_ID"
         # TODO: Do setting respect mode perhaps
-        xprop -id "$WINDOW_ID" -f _CURTAIN_XYWH 8s -set _CURTAIN_XYWH "$X $Y $W $H"
+        xprop -id "$WINDOW_ID" -f _CURTAIN_XYWH 8s -set _CURTAIN_XYWH "$ORIGINAL_X $ORIGINAL_Y $ORIGINAL_W $ORIGINAL_H"
     fi
 
 }
